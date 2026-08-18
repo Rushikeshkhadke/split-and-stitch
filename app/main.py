@@ -1,9 +1,9 @@
-from __future__ import annotations
-
 import asyncio
 import json
+import math
 import shutil
 import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -116,6 +116,109 @@ def probe(video: Path) -> dict[str, Any]:
 def safe_segment_seconds(meta: dict[str, Any]) -> float:
     model_frame_limit = 77 / max(meta["fps"], 1)
     return max(1.0, min(settings.max_segment_seconds, model_frame_limit))
+
+
+def split_video_into_chunks(video: Path, max_chunk_duration: float = 10.0, output_dir: Path | None = None) -> list[dict[str, Any]]:
+    """Splits video into sequential <= max_chunk_duration seconds chunks.
+    If total duration <= max_chunk_duration, returns 1 chunk referencing the original video."""
+    meta = probe(video)
+    total_duration = float(meta["duration"])
+    fps = float(meta["fps"])
+    
+    if output_dir is None:
+        output_dir = video.parent / "chunks"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    if total_duration <= max_chunk_duration:
+        return [{
+            "index": 1,
+            "start": 0.0,
+            "duration": total_duration,
+            "path": video,
+            "is_original": True
+        }]
+        
+    chunks = []
+    count = math.ceil(total_duration / max_chunk_duration)
+    for i in range(count):
+        start_time = i * max_chunk_duration
+        chunk_dur = min(max_chunk_duration, total_duration - start_time)
+        chunk_path = output_dir / f"chunk_{i+1:03d}.mp4"
+        
+        # Clean FFmpeg slicing with timestamp normalization and H.264 encoding
+        run(
+            "ffmpeg", "-y",
+            "-ss", f"{start_time:.6f}",
+            "-i", str(video),
+            "-t", f"{chunk_dur:.6f}",
+            "-avoid_negative_ts", "make_zero",
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "18",
+            "-r", f"{fps:.6f}",
+            "-pix_fmt", "yuv420p",
+            "-an",
+            str(chunk_path)
+        )
+        chunks.append({
+            "index": i + 1,
+            "start": start_time,
+            "duration": chunk_dur,
+            "path": chunk_path,
+            "is_original": False
+        })
+    return chunks
+
+
+def stitch_video_chunks(chunk_paths: list[Path], output_path: Path, fps: float = 30.0) -> Path:
+    """Concatenates chunk video files in exact sequential order into a single MP4."""
+    if not chunk_paths:
+        raise RuntimeError("No chunk paths provided for stitching.")
+    if len(chunk_paths) == 1:
+        shutil.copy2(chunk_paths[0], output_path)
+        return output_path
+        
+    concat_file = output_path.parent / "concat_chunks.txt"
+    concat_file.write_text("".join(f"file '{p.resolve().as_posix()}'\n" for p in chunk_paths), encoding="utf-8")
+    
+    run(
+        "ffmpeg", "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", str(concat_file),
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-r", f"{fps:.6f}",
+        str(output_path)
+    )
+    return output_path
+
+
+def restore_audio_and_mux(source_video: Path, stitched_video: Path, final_output: Path) -> Path:
+    """Muxes the original synchronized audio track from source_video onto stitched_video."""
+    meta = probe(source_video)
+    if meta.get("has_audio"):
+        try:
+            run(
+                "ffmpeg", "-y",
+                "-i", str(stitched_video),
+                "-i", str(source_video),
+                "-map", "0:v:0",
+                "-map", "1:a:0?",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-shortest",
+                str(final_output)
+            )
+            return final_output
+        except Exception:
+            shutil.copy2(stitched_video, final_output)
+            return final_output
+    else:
+        shutil.copy2(stitched_video, final_output)
+        return final_output
 
 
 async def worker_connectivity() -> dict[str, Any]:
@@ -490,7 +593,8 @@ async def process(
     resolution: str = "Low Res",
     video_remote_path: str | None = None,
     char_remote_path: str | None = None,
-    output_dir: Path | None = None
+    output_dir: Path | None = None,
+    resume_from_chunk: int = 1
 ) -> None:
     try:
         update_job(job_id, stage="Analyzing request...", progress=5)
@@ -504,10 +608,10 @@ async def process(
                 
         final = output_dir / "final_character_swap.mp4"
 
-        if settings.mode == "hf_space":
-            # Direct Hugging Face Wan2.2 Animate ZeroGPU inference
+        # Case 1: Remote paths provided directly without local video file (backward compatible single-request)
+        if not video or not video.exists():
             raw_generated = await generate_hf_wan_animate(
-                video=video,
+                video=None,
                 character=character,
                 max_duration=max_duration,
                 resolution=resolution,
@@ -516,76 +620,121 @@ async def process(
                 char_remote_path=char_remote_path,
                 output_dir=output_dir
             )
-            
-            # Restore original audio if input video had audio
-            if video and video.exists():
-                try:
-                    meta = probe(video)
-                    if meta.get("has_audio"):
-                        update_job(job_id, stage="Restoring audio...", progress=96)
-                        run(
-                            "ffmpeg", "-y", "-i", str(raw_generated), "-i", str(video),
-                            "-map", "0:v:0", "-map", "1:a:0?",
-                            "-c:v", "copy", "-c:a", "aac", "-shortest",
-                            str(final)
-                        )
-                    else:
-                        shutil.copy2(raw_generated, final)
-                except Exception:
-                    shutil.copy2(raw_generated, final)
-            else:
-                shutil.copy2(raw_generated, final)
-
+            shutil.copy2(raw_generated, final)
             update_job(job_id, stage="Completed", progress=100, complete=True, final=str(final))
             return
 
-        # Sliced segmentation pipeline for ComfyUI / Mock modes
-        if not video:
-            raise RuntimeError("Local video file required for ComfyUI/Mock pipeline.")
+        # Case 2: Local video available -> perform duration probe, chunking, sequential execution, stitching & audio sync
         meta = probe(video)
-        seconds = safe_segment_seconds(meta)
-        normalized = video.parent / "normalized.mp4"
-        vf = f"scale='trunc(min({settings.max_generation_side}/iw,{settings.max_generation_side}/ih)*iw/16)*16':'trunc(min({settings.max_generation_side}/iw,{settings.max_generation_side}/ih)*ih/16)*16':force_original_aspect_ratio=decrease"
-        run("ffmpeg", "-y", "-i", str(video), "-an", "-vf", vf, "-r", f"{meta['fps']:.6f}", "-c:v", "libx264", "-crf", "18", str(normalized))
-        count = max(1, int((meta["duration"] + seconds - .001) // seconds))
-        update_job(job_id, stage="Preparing segments...", progress=15, segments=count, safe_segment_seconds=seconds)
+        total_duration = meta["duration"]
+        fps = meta["fps"]
+
+        # Chunk the video (<= 10.0s each)
+        chunks = split_video_into_chunks(video, max_chunk_duration=10.0, output_dir=output_dir / "chunks")
+        total_chunks = len(chunks)
+
+        job_state = read_job(job_id) or {}
+        chunk_outputs: list[dict[str, Any]] = job_state.get("chunk_outputs", [])
+        completed_indices = {item["index"] for item in chunk_outputs if Path(item.get("output_path", "")).exists()}
+
+        update_job(
+            job_id,
+            stage=f"Split into {total_chunks} chunks" if total_chunks > 1 else "Preparing video...",
+            progress=10,
+            total_chunks=total_chunks,
+            total_duration=total_duration
+        )
+
+        for chunk_info in chunks:
+            idx = chunk_info["index"]
+            chunk_path: Path = chunk_info["path"]
+            chunk_dur: float = chunk_info["duration"]
+            out_chunk_path = output_dir / f"output_chunk_{idx:03d}.mp4"
+
+            # If resuming and chunk already completed and exists, skip
+            if idx in completed_indices and out_chunk_path.exists():
+                continue
+
+            stage_text = f"Processing chunk {idx} of {total_chunks}..." if total_chunks > 1 else "Processing with Wan2.2 ZeroGPU..."
+            base_progress = 10 + int(75 * ((idx - 1) / total_chunks))
+            update_job(
+                job_id,
+                stage=stage_text,
+                current_chunk=idx,
+                total_chunks=total_chunks,
+                progress=base_progress
+            )
+
+            # Max duration for this chunk (capped at 10)
+            chunk_target_dur = min(10, max(1, math.ceil(chunk_dur)))
+
+            if settings.mode == "mock":
+                await asyncio.sleep(1.0)
+                badge_path = output_dir / f"badge_{idx:03d}.png"
+                make_mock_badge(badge_path, max_width=380)
+                run(
+                    "ffmpeg", "-y", "-i", str(chunk_path), "-i", str(badge_path),
+                    "-filter_complex", "[0:v][1:v]overlay=(W-w)/2:H-h-20[v]",
+                    "-map", "[v]", "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p",
+                    str(out_chunk_path)
+                )
+            elif settings.mode == "hf_space":
+                gen_file = await generate_hf_wan_animate(
+                    video=chunk_path,
+                    character=character,
+                    max_duration=chunk_target_dur,
+                    resolution=resolution,
+                    job_id=job_id,
+                    output_dir=output_dir
+                )
+                shutil.copy2(gen_file, out_chunk_path)
+            else:
+                # ComfyUI mode
+                frame_count = max(1, round(chunk_dur * fps))
+                gen_file = await generate_segment(chunk_path, character, f"swap_{job_id}_{idx:03d}", frame_count)
+                shutil.copy2(gen_file, out_chunk_path)
+
+            chunk_outputs = [c for c in chunk_outputs if c["index"] != idx]
+            chunk_outputs.append({
+                "index": idx,
+                "duration": chunk_dur,
+                "output_path": str(out_chunk_path)
+            })
+            completed_indices.add(idx)
+            update_job(
+                job_id,
+                chunk_outputs=chunk_outputs,
+                progress=10 + int(75 * (idx / total_chunks))
+            )
+
+        # Stitch all chunk outputs together
+        update_job(job_id, stage="Stitching final video...", progress=88)
         if settings.mode == "mock":
-            await asyncio.sleep(0.6)
-        segment_pattern = video.parent / "segment_%03d.mp4"
-        run("ffmpeg", "-y", "-i", str(normalized), "-map", "0:v:0", "-f", "segment", "-segment_time", str(seconds), "-reset_timestamps", "1", "-c:v", "libx264", "-crf", "18", str(segment_pattern))
-        segments = sorted(video.parent.glob("segment_*.mp4"))
-        outputs = []
-        for index, segment in enumerate(segments, 1):
-            stage_title = f"Generating segment {index}/{len(segments)} (Mock)..." if settings.mode == "mock" else f"Generating segment {index}/{len(segments)}..."
-            update_job(job_id, stage=stage_title, progress=20 + int(65 * (index-1)/len(segments)))
-            frame_count = max(1, round(probe(segment)["duration"] * meta["fps"]))
-            error = None
-            for attempt in range(settings.segment_retries + 1):
-                try:
-                    outputs.append(await generate_segment(segment, character, f"swap_{job_id}_{index:03d}", frame_count))
-                    error = None
-                    break
-                except Exception as exc:
-                    error = exc
-            if error:
-                raise RuntimeError(f"Segment {index} failed after {settings.segment_retries + 1} attempts: {error}")
-        update_job(job_id, stage="Stitching...", progress=88)
-        if settings.mode == "mock":
-            await asyncio.sleep(0.5)
-        concat = video.parent / "concat.txt"
-        concat.write_text("".join(f"file '{p.resolve().as_posix()}'\n" for p in outputs), encoding="utf-8")
-        silent = video.parent / "stitched.mp4"
-        run("ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat), "-c:v", "libx264", "-pix_fmt", "yuv420p", str(silent))
+            await asyncio.sleep(0.4)
+
+        sorted_paths = [
+            Path(item["output_path"])
+            for item in sorted(chunk_outputs, key=lambda x: x["index"])
+            if Path(item["output_path"]).exists()
+        ]
+        stitched_silent = output_dir / "stitched_silent.mp4"
+        stitch_video_chunks(sorted_paths, stitched_silent, fps=fps)
+
+        # Audio restoration & sync
         update_job(job_id, stage="Restoring audio...", progress=95)
         if settings.mode == "mock":
-            await asyncio.sleep(0.5)
-        if meta.get("has_audio"):
-            run("ffmpeg", "-y", "-i", str(silent), "-i", str(video), "-map", "0:v:0", "-map", "1:a?", "-c:v", "copy", "-c:a", "aac", "-shortest", str(final))
-        else:
-            shutil.copy2(silent, final)
-        update_job(job_id, stage="Completed", progress=100, complete=True, final=str(final))
+            await asyncio.sleep(0.4)
+
+        restore_audio_and_mux(source_video=video, stitched_video=stitched_silent, final_output=final)
+        update_job(job_id, stage="Completed", progress=100, complete=True, failed=False, final=str(final))
+
     except Exception as exc:
-        update_job(job_id, stage="Failed", failed=True, error=str(exc))
+        update_job(
+            job_id,
+            stage="Failed",
+            failed=True,
+            error=str(exc)
+        )
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -642,7 +791,9 @@ async def create_job(
         "progress": 0,
         "complete": False,
         "failed": False,
-        "mode": settings.mode
+        "mode": settings.mode,
+        "max_duration": max_duration,
+        "resolution": resolution
     }
     update_job(job_id, **init_data)
     background.add_task(
@@ -657,6 +808,34 @@ async def create_job(
         output_dir=directory
     )
     return init_data
+
+@app.post("/api/jobs/{job_id}/retry")
+async def retry_job(job_id: str, background: BackgroundTasks):
+    job = read_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    
+    directory = settings.storage_dir / job_id
+    if not directory.exists():
+        directory = Path(tempfile.gettempdir()) / "character_swap_jobs" / job_id
+    if not directory.exists():
+        raise HTTPException(404, "Job directory not found on storage")
+        
+    vp = next(directory.glob("source*"), None)
+    cp = next(directory.glob("character*"), None)
+    
+    update_job(job_id, stage="Resuming...", failed=False, error=None)
+    background.add_task(
+        process,
+        job_id=job_id,
+        video=vp,
+        character=cp,
+        max_duration=job.get("max_duration", 2),
+        resolution=job.get("resolution", "Low Res"),
+        output_dir=directory,
+        resume_from_chunk=job.get("current_chunk", 1)
+    )
+    return read_job(job_id)
 
 @app.get("/api/jobs/{job_id}")
 async def get_job(job_id: str):

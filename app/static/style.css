@@ -533,6 +533,20 @@ select:focus {
   padding: 8px 0;
 }
 
+.chunk-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
 /* Animations */
 @keyframes spin {
   to { transform: rotate(360deg); }

@@ -203,15 +203,20 @@ async function pollJobStatus() {
     else if (stage.includes('Queuing')) detail = 'Waiting for ZeroGPU worker slot';
     else if (stage.includes('Downloading')) detail = 'Retrieving character-swapped video';
     else if (stage.includes('Restoring')) detail = 'Finalizing audio sync & encoding';
+    else if (stage.includes('Stitching')) detail = 'Merging processed video chunks seamlessly';
+    else if (stage.includes('Split into')) detail = `Video divided into ${job.total_chunks} sequential segments (<= 10s each)`;
 
-    updateProgress(progress, stage, detail);
+    updateProgress(progress, stage, detail, job);
 
     if (job.failed) {
       clearInterval(pollInterval);
       const rawError = job.error || 'Unknown error occurred';
       const cleanError = rawError.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').trim();
-      updateProgress(0, 'Generation Failed', cleanError);
+      updateProgress(0, 'Generation Failed', cleanError, job);
       $('start-btn').disabled = false;
+      $('retry-wrap').hidden = false;
+    } else {
+      $('retry-wrap').hidden = true;
     }
 
     if (job.complete) {
@@ -226,18 +231,48 @@ async function pollJobStatus() {
       $('progress-section').hidden = true;
       $('result-section').hidden = false;
       $('start-btn').disabled = false;
+      $('retry-wrap').hidden = true;
     }
   } catch (err) {
     console.error('Polling error:', err);
   }
 }
 
-function updateProgress(percent, stageText, detailText) {
+function updateProgress(percent, stageText, detailText, job = null) {
   $('progress-bar').style.width = `${percent}%`;
   $('progress-percent').textContent = `${percent}%`;
   $('stage-label').textContent = stageText;
   if (detailText) $('stage-detail').textContent = detailText;
+
+  const chunkBadge = $('chunk-badge');
+  if (job && job.total_chunks && job.total_chunks > 1) {
+    chunkBadge.hidden = false;
+    chunkBadge.textContent = `Chunk ${job.current_chunk || 1} / ${job.total_chunks}`;
+  } else {
+    chunkBadge.hidden = true;
+  }
 }
+
+// Retry Handler
+$('retry-btn').addEventListener('click', async () => {
+  if (!jobId) return;
+  const retryBtn = $('retry-btn');
+  retryBtn.disabled = true;
+  $('retry-wrap').hidden = true;
+  updateProgress(15, 'Resuming Generation...', 'Re-submitting failed chunk to Wan2.2 ZeroGPU');
+
+  try {
+    const res = await fetch(`/api/jobs/${jobId}/retry`, { method: 'POST' });
+    if (!res.ok) throw new Error('Could not resume job');
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(pollJobStatus, 1500);
+    pollJobStatus();
+  } catch (e) {
+    alert('Retry error: ' + e.message);
+    retryBtn.disabled = false;
+    $('retry-wrap').hidden = false;
+  }
+});
 
 // Reset Handler
 $('reset-btn').addEventListener('click', () => {
@@ -249,6 +284,8 @@ $('reset-btn').addEventListener('click', () => {
   $('result-section').hidden = true;
   $('progress-section').hidden = true;
   $('start-btn').disabled = false;
+  $('retry-wrap').hidden = true;
+  $('chunk-badge').hidden = true;
   jobId = null;
 });
 
