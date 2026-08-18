@@ -132,17 +132,20 @@ $('swap-form').addEventListener('submit', async e => {
 
   try {
     const res = await fetch('/api/jobs', { method: 'POST', body: formData });
-    if (!res.ok) {
-      let msg = 'Could not start generation job';
-      try {
-        const errData = await res.json();
-        msg = errData.detail?.message || errData.detail || msg;
-      } catch (jsonErr) {
-        msg = (await res.text()) || msg;
-      }
-      throw new Error(msg);
+    const rawText = await res.text();
+    let jobData = null;
+    try {
+      jobData = JSON.parse(rawText);
+    } catch (parseErr) {
+      const cleanMsg = rawText.replace(/<[^>]*>?/gm, '').trim();
+      throw new Error(cleanMsg || `Server returned status ${res.status}`);
     }
-    const jobData = await res.json();
+
+    if (!res.ok) {
+      const errorMsg = jobData?.detail?.message || jobData?.detail || jobData?.error || `Request failed with status ${res.status}`;
+      throw new Error(errorMsg);
+    }
+
     jobId = jobData.id;
 
     if (pollInterval) clearInterval(pollInterval);
