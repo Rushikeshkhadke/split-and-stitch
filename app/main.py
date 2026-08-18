@@ -333,7 +333,7 @@ async def generate_hf_wan_animate(
     if job_id:
         update_job(job_id, stage="Queuing Wan2.2 Animate task...", progress=30)
         
-    # 2. Call animate_scene endpoint
+    # 2. Call animate_scene endpoint with automatic queue retry
     payload = {
         "data": [
             {"path": video_remote_path, "meta": {"_type": "gradio.FileData"}},
@@ -346,64 +346,80 @@ async def generate_hf_wan_animate(
     }
     
     timeout = httpx.Timeout(connect=30, read=300, write=300, pool=30)
+    max_queue_retries = 3
+    
     async with httpx.AsyncClient(timeout=timeout) as client:
-        r_call = await client.post(hf_url("/gradio_api/call/animate_scene"), json=payload, headers=hf_headers())
-        r_call.raise_for_status()
-        event_id = r_call.json().get("event_id")
-        if not event_id:
-            raise RuntimeError(f"No event_id returned from Space: {r_call.text}")
+        for attempt in range(1, max_queue_retries + 1):
+            if job_id:
+                stage_msg = "Queuing Wan2.2 Animate task..." if attempt == 1 else f"ZeroGPU busy. Retrying queue ({attempt}/{max_queue_retries})..."
+                update_job(job_id, stage=stage_msg, progress=30)
+                
+            r_call = await client.post(hf_url("/gradio_api/call/animate_scene"), json=payload, headers=hf_headers())
+            r_call.raise_for_status()
+            event_id = r_call.json().get("event_id")
+            if not event_id:
+                raise RuntimeError(f"No event_id returned from Space: {r_call.text}")
+                
+            if job_id:
+                update_job(job_id, stage="Processing with Wan2.2 ZeroGPU...", progress=50)
+                
+            # 3. Stream SSE status
+            sse_url = hf_url(f"/gradio_api/call/animate_scene/{event_id}")
+            final_video_url = None
+            error_msg = None
             
-        if job_id:
-            update_job(job_id, stage="Processing with Wan2.2 ZeroGPU...", progress=50)
-            
-        # 3. Stream SSE status
-        sse_url = hf_url(f"/gradio_api/call/animate_scene/{event_id}")
-        final_video_url = None
-        error_msg = None
-        
-        async with client.stream("GET", sse_url, headers=hf_headers(), timeout=600) as stream:
-            async for line in stream.aiter_lines():
-                if not line:
-                    continue
-                if line.startswith("event: heartbeat"):
-                    if job_id:
-                        current = read_job(job_id) or {}
-                        current_p = min(90, current.get("progress", 50) + 5)
-                        update_job(job_id, stage="Generating character-swapped frames...", progress=current_p)
-                elif line.startswith("data:"):
-                    raw_data = line[5:].strip()
-                    if not raw_data or raw_data == "null":
+            async with client.stream("GET", sse_url, headers=hf_headers(), timeout=600) as stream:
+                async for line in stream.aiter_lines():
+                    if not line:
                         continue
-                    try:
-                        data = json.loads(raw_data)
-                        if isinstance(data, dict) and "error" in data:
-                            error_msg = data.get("error")
-                            break
-                        if isinstance(data, list) and len(data) >= 1 and isinstance(data[0], dict):
-                            # Completed! Extract output index 0
-                            out_item = data[0]
-                            final_video_url = out_item.get("url")
-                            if not final_video_url and "video" in out_item:
-                                final_video_url = out_item["video"].get("url")
-                            break
-                    except Exception as e:
-                        pass
-                        
-        if error_msg:
-            raise RuntimeError(error_msg)
+                    if line.startswith("event: heartbeat"):
+                        if job_id:
+                            current = read_job(job_id) or {}
+                            current_p = min(90, current.get("progress", 50) + 5)
+                            update_job(job_id, stage="Generating character-swapped frames...", progress=current_p)
+                    elif line.startswith("data:"):
+                        raw_data = line[5:].strip()
+                        if not raw_data or raw_data == "null":
+                            continue
+                        try:
+                            data = json.loads(raw_data)
+                            if isinstance(data, dict) and "error" in data:
+                                error_msg = data.get("error")
+                                break
+                            if isinstance(data, list) and len(data) >= 1 and isinstance(data[0], dict):
+                                # Completed! Extract output index 0
+                                out_item = data[0]
+                                final_video_url = out_item.get("url")
+                                if not final_video_url and "video" in out_item:
+                                    final_video_url = out_item["video"].get("url")
+                                break
+                        except Exception as e:
+                            pass
+                            
+            if error_msg:
+                # If GPU queue was full, retry automatically after brief backoff
+                if "No GPU was available" in error_msg and attempt < max_queue_retries:
+                    await asyncio.sleep(4)
+                    continue
+                raise RuntimeError(error_msg)
+                
+            if not final_video_url:
+                if attempt < max_queue_retries:
+                    await asyncio.sleep(3)
+                    continue
+                raise RuntimeError("Wan2.2 ZeroGPU generation completed without returning an output video URL.")
+                
+            if job_id:
+                update_job(job_id, stage="Downloading final video from Wan2.2...", progress=92)
+                
+            # 4. Download output video
+            target = video.parent / "hf_generated_raw.mp4"
+            r_down = await client.get(final_video_url, headers=hf_headers(), timeout=120)
+            r_down.raise_for_status()
+            target.write_bytes(r_down.content)
+            return target
             
-        if not final_video_url:
-            raise RuntimeError("Wan2.2 ZeroGPU generation completed without returning an output video URL.")
-            
-        if job_id:
-            update_job(job_id, stage="Downloading final video from Wan2.2...", progress=92)
-            
-        # 4. Download output video
-        target = video.parent / "hf_generated_raw.mp4"
-        r_down = await client.get(final_video_url, headers=hf_headers(), timeout=120)
-        r_down.raise_for_status()
-        target.write_bytes(r_down.content)
-        return target
+        raise RuntimeError("No GPU was available after multiple retries. Please try again or authenticate with a Hugging Face token.")
 
 
 async def generate_segment(segment: Path, character: Path, output_prefix: str, frames: int) -> Path:
