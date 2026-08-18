@@ -34,25 +34,28 @@ def update_job(job_id: str, **kwargs: Any) -> dict[str, Any]:
     if job_id not in jobs:
         jobs[job_id] = read_job(job_id) or {"id": job_id}
     jobs[job_id].update(kwargs)
-    try:
-        job_file = settings.storage_dir / f"job_{job_id}.json"
-        job_file.write_text(json.dumps(jobs[job_id]), encoding="utf-8")
-    except Exception:
-        pass
+    for directory in [settings.storage_dir, Path(tempfile.gettempdir()) / "character_swap_jobs"]:
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            job_file = directory / f"job_{job_id}.json"
+            job_file.write_text(json.dumps(jobs[job_id]), encoding="utf-8")
+        except Exception:
+            pass
     return jobs[job_id]
 
 
 def read_job(job_id: str) -> dict[str, Any] | None:
     if job_id in jobs:
         return jobs[job_id]
-    try:
-        job_file = settings.storage_dir / f"job_{job_id}.json"
-        if job_file.exists():
-            data = json.loads(job_file.read_text(encoding="utf-8"))
-            jobs[job_id] = data
-            return data
-    except Exception:
-        pass
+    for directory in [settings.storage_dir, Path(tempfile.gettempdir()) / "character_swap_jobs"]:
+        try:
+            job_file = directory / f"job_{job_id}.json"
+            if job_file.exists():
+                data = json.loads(job_file.read_text(encoding="utf-8"))
+                jobs[job_id] = data
+                return data
+        except Exception:
+            pass
     return None
 
 
@@ -88,19 +91,31 @@ def probe(video: Path) -> dict[str, Any]:
     try:
         raw = run("ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(video))
         data = json.loads(raw)
-        stream = next((s for s in data["streams"] if s["codec_type"] == "video"), None)
+        stream = next((s for s in data.get("streams", []) if s.get("codec_type") == "video"), None)
         if not stream:
             raise RuntimeError("The uploaded file contains no video stream.")
-        rate = stream.get("avg_frame_rate", "0/1")
-        n, d = rate.split("/")
-        fps = float(n) / float(d or 1)
-        duration = float(stream.get("duration") or data["format"].get("duration") or 0)
+        rate = stream.get("avg_frame_rate") or stream.get("r_frame_rate") or "30/1"
+        try:
+            if "/" in str(rate):
+                n, d = str(rate).split("/")
+                fps = float(n) / (float(d) if float(d) > 0 else 1.0)
+            else:
+                fps = float(rate)
+        except Exception:
+            fps = 30.0
+        if fps <= 0 or math.isnan(fps):
+            fps = 30.0
+            
+        duration = float(stream.get("duration") or data.get("format", {}).get("duration") or 2.0)
+        if duration <= 0 or math.isnan(duration):
+            duration = 2.0
+            
         return {
-            "width": int(stream["width"]),
-            "height": int(stream["height"]),
+            "width": int(stream.get("width", 480)),
+            "height": int(stream.get("height", 480)),
             "fps": fps,
             "duration": duration,
-            "has_audio": any(s["codec_type"] == "audio" for s in data["streams"])
+            "has_audio": any(s.get("codec_type") == "audio" for s in data.get("streams", []))
         }
     except Exception:
         # Fallback for serverless environments without ffprobe binary
@@ -554,7 +569,9 @@ async def generate_hf_wan_animate(
                 update_job(job_id, stage="Downloading final video from Wan2.2...", progress=92)
                 
             # 4. Download output video
-            target = video.parent / "hf_generated_raw.mp4"
+            target_dir = output_dir or (video.parent if video else Path(tempfile.gettempdir()))
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / f"hf_generated_{uuid.uuid4().hex[:6]}.mp4"
             r_down = await client.get(final_video_url, headers=hf_headers(), timeout=120)
             r_down.raise_for_status()
             target.write_bytes(r_down.content)
@@ -589,11 +606,9 @@ async def generate_segment(segment: Path, character: Path, output_prefix: str, f
         "{{frames}}": frames,
         "{{mode}}": "Mix"
     })
-    timeout = httpx.Timeout(connect=30, read=300, write=300, pool=30)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        queued = await client.post(worker_url("/prompt"), json={"prompt": prompt, "client_id": "character-swap"})
-        queued.raise_for_status()
-        prompt_id = queued.json()["prompt_id"]
+    submission = await queue_prompt(prompt)
+    prompt_id = submission["prompt_id"]
+    async with httpx.AsyncClient(timeout=10) as client:
         for _ in range(1800):
             history = await client.get(worker_url(f"/history/{prompt_id}"))
             history.raise_for_status()
@@ -647,7 +662,37 @@ async def process(
             except Exception:
                 max_total_sec = None
 
-        # Case 1: Remote paths provided directly without local video file (backward compatible single-request)
+        # Retrieve source files from remote Gradio storage if needed
+        if (not video or not video.exists()) and video_remote_path:
+            update_job(job_id, stage="Syncing source video...", progress=7)
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    dl = await client.get(
+                        hf_url(f"/gradio_api/file={video_remote_path}"),
+                        headers=hf_headers()
+                    )
+                    if dl.status_code == 200:
+                        v_target = output_dir / "source_uploaded.mp4"
+                        v_target.write_bytes(dl.content)
+                        video = v_target
+            except Exception:
+                pass
+
+        if (not character or not character.exists()) and char_remote_path:
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    dl = await client.get(
+                        hf_url(f"/gradio_api/file={char_remote_path}"),
+                        headers=hf_headers()
+                    )
+                    if dl.status_code == 200:
+                        c_target = output_dir / "character_uploaded.png"
+                        c_target.write_bytes(dl.content)
+                        character = c_target
+            except Exception:
+                pass
+
+        # Case 1: Remote paths provided directly without local video file (fallback single-request)
         if not video or not video.exists():
             direct_dur = min(10, int(max_total_sec)) if max_total_sec else 10
             raw_generated = await generate_hf_wan_animate(

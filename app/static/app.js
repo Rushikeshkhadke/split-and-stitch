@@ -96,7 +96,7 @@ function setupDropzones() {
     }
   });
 
-  // Drag over animations
+  // Drag over animations & drop handling
   [videoDropzone, charDropzone].forEach(dropzone => {
     ['dragenter', 'dragover'].forEach(eventName => {
       dropzone.addEventListener(eventName, e => {
@@ -104,11 +104,29 @@ function setupDropzones() {
         dropzone.classList.add('dragover');
       });
     });
-    ['dragleave', 'drop'].forEach(eventName => {
+    ['dragleave'].forEach(eventName => {
       dropzone.addEventListener(eventName, () => {
         dropzone.classList.remove('dragover');
       });
     });
+  });
+
+  videoDropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    videoDropzone.classList.remove('dragover');
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      videoInput.files = e.dataTransfer.files;
+      videoInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  });
+
+  charDropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    charDropzone.classList.remove('dragover');
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      charInput.files = e.dataTransfer.files;
+      charInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
   });
 }
 
