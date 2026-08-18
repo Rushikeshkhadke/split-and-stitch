@@ -177,7 +177,9 @@ async function pollJobStatus() {
 
     if (job.failed) {
       clearInterval(pollInterval);
-      updateProgress(0, 'Generation Failed', job.error || 'Unknown error occurred');
+      const rawError = job.error || 'Unknown error occurred';
+      const cleanError = rawError.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').trim();
+      updateProgress(0, 'Generation Failed', cleanError);
       $('start-btn').disabled = false;
     }
 
