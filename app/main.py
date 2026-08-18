@@ -118,11 +118,18 @@ def safe_segment_seconds(meta: dict[str, Any]) -> float:
     return max(1.0, min(settings.max_segment_seconds, model_frame_limit))
 
 
-def split_video_into_chunks(video: Path, max_chunk_duration: float = 10.0, output_dir: Path | None = None) -> list[dict[str, Any]]:
+def split_video_into_chunks(
+    video: Path,
+    max_chunk_duration: float = 10.0,
+    max_total_duration: float | None = None,
+    output_dir: Path | None = None
+) -> list[dict[str, Any]]:
     """Splits video into sequential <= max_chunk_duration seconds chunks.
-    If total duration <= max_chunk_duration, returns 1 chunk referencing the original video."""
+    If max_total_duration is provided, caps the total duration processed."""
     meta = probe(video)
     total_duration = float(meta["duration"])
+    if max_total_duration and max_total_duration > 0:
+        total_duration = min(total_duration, float(max_total_duration))
     fps = float(meta["fps"])
     
     if output_dir is None:
@@ -130,6 +137,30 @@ def split_video_into_chunks(video: Path, max_chunk_duration: float = 10.0, outpu
     output_dir.mkdir(parents=True, exist_ok=True)
     
     if total_duration <= max_chunk_duration:
+        # If user capped duration shorter than original video, slice the target duration
+        if max_total_duration and total_duration < meta["duration"]:
+            chunk_path = output_dir / "chunk_001.mp4"
+            run(
+                "ffmpeg", "-y",
+                "-ss", "0.0",
+                "-i", str(video),
+                "-t", f"{total_duration:.6f}",
+                "-avoid_negative_ts", "make_zero",
+                "-c:v", "libx264",
+                "-preset", "fast",
+                "-crf", "18",
+                "-r", f"{fps:.6f}",
+                "-pix_fmt", "yuv420p",
+                "-an",
+                str(chunk_path)
+            )
+            return [{
+                "index": 1,
+                "start": 0.0,
+                "duration": total_duration,
+                "path": chunk_path,
+                "is_original": False
+            }]
         return [{
             "index": 1,
             "start": 0.0,
@@ -589,7 +620,7 @@ async def process(
     job_id: str,
     video: Path | None = None,
     character: Path | None = None,
-    max_duration: int = 2,
+    max_duration: int | float | str | None = "auto",
     resolution: str = "Low Res",
     video_remote_path: str | None = None,
     char_remote_path: str | None = None,
@@ -608,12 +639,21 @@ async def process(
                 
         final = output_dir / "final_character_swap.mp4"
 
+        # Parse max_duration
+        max_total_sec = None
+        if max_duration and str(max_duration).lower() not in {"auto", "all", "none", "0"}:
+            try:
+                max_total_sec = float(max_duration)
+            except Exception:
+                max_total_sec = None
+
         # Case 1: Remote paths provided directly without local video file (backward compatible single-request)
         if not video or not video.exists():
+            direct_dur = min(10, int(max_total_sec)) if max_total_sec else 10
             raw_generated = await generate_hf_wan_animate(
                 video=None,
                 character=character,
-                max_duration=max_duration,
+                max_duration=direct_dur,
                 resolution=resolution,
                 job_id=job_id,
                 video_remote_path=video_remote_path,
@@ -630,7 +670,12 @@ async def process(
         fps = meta["fps"]
 
         # Chunk the video (<= 10.0s each)
-        chunks = split_video_into_chunks(video, max_chunk_duration=10.0, output_dir=output_dir / "chunks")
+        chunks = split_video_into_chunks(
+            video,
+            max_chunk_duration=10.0,
+            max_total_duration=max_total_sec,
+            output_dir=output_dir / "chunks"
+        )
         total_chunks = len(chunks)
 
         job_state = read_job(job_id) or {}
@@ -761,7 +806,7 @@ async def create_job(
     character: UploadFile | None = File(None),
     video_remote_path: str | None = Form(None),
     char_remote_path: str | None = Form(None),
-    max_duration: int = Form(2),
+    max_duration: str = Form("auto"),
     resolution: str = Form("Low Res")
 ):
     if not (video_remote_path and char_remote_path) and not (video and character and video.filename and character.filename):

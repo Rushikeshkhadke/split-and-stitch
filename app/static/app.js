@@ -63,6 +63,17 @@ function setupDropzones() {
     if (file) {
       const url = URL.createObjectURL(file);
       videoThumb.src = url;
+      videoThumb.onloadedmetadata = () => {
+        const dur = videoThumb.duration;
+        if (dur && !isNaN(dur)) {
+          const chunks = Math.ceil(dur / 10);
+          const autoOpt = $('duration-select').querySelector('option[value="auto"]');
+          if (autoOpt) {
+            autoOpt.textContent = `Auto (Full Video: ${dur.toFixed(1)}s — ${chunks} chunk${chunks > 1 ? 's' : ''})`;
+          }
+          videoFilename.textContent = `${file.name} (${dur.toFixed(1)}s — ${chunks} chunk${chunks > 1 ? 's' : ''})`;
+        }
+      };
       videoThumb.play().catch(() => {});
       videoFilename.textContent = file.name;
       videoPlaceholder.hidden = true;
