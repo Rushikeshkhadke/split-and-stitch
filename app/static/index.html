@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wan2.2 Character Swap</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="23 7 16 12 23 17 23 7"></polygon>
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+          </svg>
+        </div>
+        <div>
+          <h1>Wan2.2 Character Swap</h1>
+          <p class="subtitle">AI-powered character replacement and motion retargeting</p>
+        </div>
+      </div>
+      <div id="status-pill" class="status-pill checking">
+        <span class="status-dot"></span>
+        <span id="status-text">Checking backend...</span>
+      </div>
+    </header>
+
+    <!-- Notice Box -->
+    <div id="preflight-banner" class="preflight-banner" hidden></div>
+
+    <!-- Main Creation Studio -->
+    <main class="studio-card">
+      <form id="swap-form">
+        <!-- Dual Upload Section -->
+        <div class="upload-grid">
+          <!-- Source Video Upload -->
+          <div class="upload-card" id="video-card">
+            <div class="card-header">
+              <span class="step-num">1</span>
+              <h3>Source Motion Video</h3>
+            </div>
+            <div class="dropzone" id="video-dropzone">
+              <input id="video-input" type="file" accept="video/mp4,video/quicktime,video/webm" required>
+              <div class="dropzone-content" id="video-placeholder">
+                <div class="upload-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                  </svg>
+                </div>
+                <p class="drop-title">Drop your video here</p>
+                <p class="drop-sub">or <span class="browse-link">browse files</span> (MP4, MOV)</p>
+              </div>
+              <div class="preview-container" id="video-preview-wrap" hidden>
+                <video id="video-thumb" playsinline loop muted></video>
+                <div class="file-tag" id="video-filename"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Character Image Upload -->
+          <div class="upload-card" id="character-card">
+            <div class="card-header">
+              <span class="step-num">2</span>
+              <h3>Character Reference Image</h3>
+            </div>
+            <div class="dropzone" id="character-dropzone">
+              <input id="character-input" type="file" accept="image/png,image/jpeg,image/webp" required>
+              <div class="dropzone-content" id="character-placeholder">
+                <div class="upload-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                </div>
+                <p class="drop-title">Drop character image</p>
+                <p class="drop-sub">or <span class="browse-link">browse files</span> (PNG, JPG)</p>
+              </div>
+              <div class="preview-container" id="character-preview-wrap" hidden>
+                <img id="character-thumb" alt="Character Preview">
+                <div class="file-tag" id="character-filename"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Generation Settings Controls -->
+        <div class="settings-bar">
+          <div class="setting-item">
+            <label for="mode-select">Mode</label>
+            <div class="select-wrapper">
+              <select id="mode-select">
+                <option value="Character Swap" selected>Character Swap</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-item">
+            <label for="duration-select">Duration</label>
+            <div class="select-wrapper">
+              <select id="duration-select">
+                <option value="2" selected>2 Seconds (Fastest)</option>
+                <option value="3">3 Seconds</option>
+                <option value="4">4 Seconds</option>
+                <option value="5">5 Seconds</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-item">
+            <label for="resolution-select">Resolution</label>
+            <div class="select-wrapper">
+              <select id="resolution-select">
+                <option value="Low Res" selected>Low Res (480p - Fast)</option>
+                <option value="Medium Res">Medium Res (832p)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Submit Button -->
+        <button id="start-btn" class="primary-btn" type="submit">
+          <span class="btn-text">Generate Character Swap</span>
+          <svg class="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+        </button>
+      </form>
+
+      <!-- Processing Progress Section -->
+      <section id="progress-section" class="progress-section" hidden>
+        <div class="progress-header">
+          <div class="spinner"></div>
+          <div>
+            <h4 id="stage-label">Preparing Generation...</h4>
+            <p id="stage-detail" class="stage-detail">Connecting to Wan2.2 ZeroGPU pipeline</p>
+          </div>
+          <span id="progress-percent" class="progress-percent">0%</span>
+        </div>
+        <div class="progress-track">
+          <div id="progress-bar" class="progress-fill" style="width: 0%"></div>
+        </div>
+      </section>
+
+      <!-- Generation Result Section -->
+      <section id="result-section" class="result-section" hidden>
+        <div class="result-header">
+          <div class="success-badge">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <span>Character Swap Ready</span>
+          </div>
+        </div>
+        <div class="result-player-wrap">
+          <video id="result-video" controls autoplay playsinline loop></video>
+        </div>
+        <div class="result-actions">
+          <a id="download-btn" class="download-btn" download="final_character_swap.mp4">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Download Video</span>
+          </a>
+          <button id="reset-btn" class="secondary-btn" type="button">New Swap</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>Powered by Wan2.2 Animate 14B &amp; ZeroGPU</p>
+    </footer>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

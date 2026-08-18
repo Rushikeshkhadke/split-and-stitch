@@ -1,0 +1,20 @@
+# Environments and python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+
+# Local data and secrets
+data/
+.env
+.env.local
+
+# Vercel
+.vercel/
+
+# Temporary and editor files
+.idea/
+.vscode/
+*.log
