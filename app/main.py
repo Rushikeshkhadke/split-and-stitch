@@ -30,6 +30,32 @@ app.mount("/static", StaticFiles(directory=ROOT / "app" / "static"), name="stati
 jobs: dict[str, dict[str, Any]] = {}
 
 
+def update_job(job_id: str, **kwargs: Any) -> dict[str, Any]:
+    if job_id not in jobs:
+        jobs[job_id] = read_job(job_id) or {"id": job_id}
+    jobs[job_id].update(kwargs)
+    try:
+        job_file = settings.storage_dir / f"job_{job_id}.json"
+        job_file.write_text(json.dumps(jobs[job_id]), encoding="utf-8")
+    except Exception:
+        pass
+    return jobs[job_id]
+
+
+def read_job(job_id: str) -> dict[str, Any] | None:
+    if job_id in jobs:
+        return jobs[job_id]
+    try:
+        job_file = settings.storage_dir / f"job_{job_id}.json"
+        if job_file.exists():
+            data = json.loads(job_file.read_text(encoding="utf-8"))
+            jobs[job_id] = data
+            return data
+    except Exception:
+        pass
+    return None
+
+
 def make_mock_badge(path: Path, max_width: int = 380) -> Path:
     if path.exists():
         return path
@@ -304,8 +330,8 @@ async def generate_hf_wan_animate(
     video_remote_path = await hf_upload_file(video, "video/mp4")
     char_remote_path = await hf_upload_file(character, "image/png")
     
-    if job:
-        job.update(stage="Queuing Wan2.2 Animate task...", progress=30)
+    if job_id:
+        update_job(job_id, stage="Queuing Wan2.2 Animate task...", progress=30)
         
     # 2. Call animate_scene endpoint
     payload = {
@@ -327,8 +353,8 @@ async def generate_hf_wan_animate(
         if not event_id:
             raise RuntimeError(f"No event_id returned from Space: {r_call.text}")
             
-        if job:
-            job.update(stage="Processing with Wan2.2 ZeroGPU...", progress=50)
+        if job_id:
+            update_job(job_id, stage="Processing with Wan2.2 ZeroGPU...", progress=50)
             
         # 3. Stream SSE status
         sse_url = hf_url(f"/gradio_api/call/animate_scene/{event_id}")
@@ -340,9 +366,10 @@ async def generate_hf_wan_animate(
                 if not line:
                     continue
                 if line.startswith("event: heartbeat"):
-                    if job:
-                        current_p = min(90, job.get("progress", 50) + 5)
-                        job.update(stage="Generating character-swapped frames...", progress=current_p)
+                    if job_id:
+                        current = read_job(job_id) or {}
+                        current_p = min(90, current.get("progress", 50) + 5)
+                        update_job(job_id, stage="Generating character-swapped frames...", progress=current_p)
                 elif line.startswith("data:"):
                     raw_data = line[5:].strip()
                     if not raw_data or raw_data == "null":
@@ -368,8 +395,8 @@ async def generate_hf_wan_animate(
         if not final_video_url:
             raise RuntimeError("Wan2.2 ZeroGPU generation completed without returning an output video URL.")
             
-        if job:
-            job.update(stage="Downloading final video from Wan2.2...", progress=92)
+        if job_id:
+            update_job(job_id, stage="Downloading final video from Wan2.2...", progress=92)
             
         # 4. Download output video
         target = video.parent / "hf_generated_raw.mp4"
@@ -439,9 +466,8 @@ async def process(
     max_duration: int = 2,
     resolution: str = "Low Res"
 ) -> None:
-    job = jobs[job_id]
     try:
-        job.update(stage="Analyzing video...", progress=5)
+        update_job(job_id, stage="Analyzing video...", progress=5)
         if settings.mode == "mock":
             await asyncio.sleep(0.6)
         meta = probe(video)
@@ -459,8 +485,8 @@ async def process(
             )
             
             # Restore original audio if input video had audio
-            job.update(stage="Restoring audio...", progress=96)
-            if meta["has_audio"]:
+            update_job(job_id, stage="Restoring audio...", progress=96)
+            if meta.get("has_audio"):
                 try:
                     run(
                         "ffmpeg", "-y", "-i", str(raw_generated), "-i", str(video),
@@ -473,7 +499,7 @@ async def process(
             else:
                 shutil.copy2(raw_generated, final)
 
-            job.update(stage="Completed", progress=100, complete=True, final=str(final))
+            update_job(job_id, stage="Completed", progress=100, complete=True, final=str(final))
             return
 
         # Sliced segmentation pipeline for ComfyUI / Mock modes
@@ -482,7 +508,7 @@ async def process(
         vf = f"scale='trunc(min({settings.max_generation_side}/iw,{settings.max_generation_side}/ih)*iw/16)*16':'trunc(min({settings.max_generation_side}/iw,{settings.max_generation_side}/ih)*ih/16)*16':force_original_aspect_ratio=decrease"
         run("ffmpeg", "-y", "-i", str(video), "-an", "-vf", vf, "-r", f"{meta['fps']:.6f}", "-c:v", "libx264", "-crf", "18", str(normalized))
         count = max(1, int((meta["duration"] + seconds - .001) // seconds))
-        job.update(stage="Preparing segments...", progress=15, segments=count, safe_segment_seconds=seconds)
+        update_job(job_id, stage="Preparing segments...", progress=15, segments=count, safe_segment_seconds=seconds)
         if settings.mode == "mock":
             await asyncio.sleep(0.6)
         segment_pattern = video.parent / "segment_%03d.mp4"
@@ -491,7 +517,7 @@ async def process(
         outputs = []
         for index, segment in enumerate(segments, 1):
             stage_title = f"Generating segment {index}/{len(segments)} (Mock)..." if settings.mode == "mock" else f"Generating segment {index}/{len(segments)}..."
-            job.update(stage=stage_title, progress=20 + int(65 * (index-1)/len(segments)))
+            update_job(job_id, stage=stage_title, progress=20 + int(65 * (index-1)/len(segments)))
             frame_count = max(1, round(probe(segment)["duration"] * meta["fps"]))
             error = None
             for attempt in range(settings.segment_retries + 1):
@@ -503,23 +529,23 @@ async def process(
                     error = exc
             if error:
                 raise RuntimeError(f"Segment {index} failed after {settings.segment_retries + 1} attempts: {error}")
-        job.update(stage="Stitching...", progress=88)
+        update_job(job_id, stage="Stitching...", progress=88)
         if settings.mode == "mock":
             await asyncio.sleep(0.5)
         concat = video.parent / "concat.txt"
         concat.write_text("".join(f"file '{p.resolve().as_posix()}'\n" for p in outputs), encoding="utf-8")
         silent = video.parent / "stitched.mp4"
         run("ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat), "-c:v", "libx264", "-pix_fmt", "yuv420p", str(silent))
-        job.update(stage="Restoring audio...", progress=95)
+        update_job(job_id, stage="Restoring audio...", progress=95)
         if settings.mode == "mock":
             await asyncio.sleep(0.5)
-        if meta["has_audio"]:
+        if meta.get("has_audio"):
             run("ffmpeg", "-y", "-i", str(silent), "-i", str(video), "-map", "0:v:0", "-map", "1:a?", "-c:v", "copy", "-c:a", "aac", "-shortest", str(final))
         else:
             shutil.copy2(silent, final)
-        job.update(stage="Completed", progress=100, complete=True, final=str(final))
+        update_job(job_id, stage="Completed", progress=100, complete=True, final=str(final))
     except Exception as exc:
-        job.update(stage="Failed", failed=True, error=str(exc))
+        update_job(job_id, stage="Failed", failed=True, error=str(exc))
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -563,7 +589,8 @@ async def create_job(
     cp = directory / f"character{Path(character.filename).suffix.lower()}"
     vp.write_bytes(await video.read())
     cp.write_bytes(await character.read())
-    jobs[job_id] = {
+    
+    init_data = {
         "id": job_id,
         "stage": "Queued",
         "progress": 0,
@@ -571,18 +598,20 @@ async def create_job(
         "failed": False,
         "mode": settings.mode
     }
+    update_job(job_id, **init_data)
     background.add_task(process, job_id, vp, cp, max_duration, resolution)
-    return jobs[job_id]
+    return init_data
 
 @app.get("/api/jobs/{job_id}")
 async def get_job(job_id: str):
-    if job_id not in jobs:
+    job = read_job(job_id)
+    if not job:
         raise HTTPException(404, "Job not found")
-    return jobs[job_id]
+    return job
 
 @app.get("/api/jobs/{job_id}/download")
 async def download(job_id: str):
-    job = jobs.get(job_id)
+    job = read_job(job_id)
     path = Path(job.get("final", "")) if job else None
     if not path or not path.exists():
         raise HTTPException(404, "Final video is not ready")
