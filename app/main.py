@@ -314,21 +314,28 @@ async def hf_upload_file(path: Path, mime_type: str) -> str:
 
 
 async def generate_hf_wan_animate(
-    video: Path,
-    character: Path,
+    video: Path | None = None,
+    character: Path | None = None,
     max_duration: int = 2,
     resolution: str = "Low Res",
-    job_id: str | None = None
+    job_id: str | None = None,
+    video_remote_path: str | None = None,
+    char_remote_path: str | None = None,
+    output_dir: Path | None = None
 ) -> Path:
     """Submits generation to alexnasa/Wan2.2-Animate-ZEROGPU Space and downloads the output MP4."""
-    job = jobs.get(job_id) if job_id else None
-    
-    if job:
-        job.update(stage="Uploading media to Wan2.2 ZeroGPU...", progress=15)
+    if not video_remote_path and video:
+        if job_id:
+            update_job(job_id, stage="Uploading video to Wan2.2 ZeroGPU...", progress=15)
+        video_remote_path = await hf_upload_file(video, "video/mp4")
         
-    # 1. Upload media files
-    video_remote_path = await hf_upload_file(video, "video/mp4")
-    char_remote_path = await hf_upload_file(character, "image/png")
+    if not char_remote_path and character:
+        if job_id:
+            update_job(job_id, stage="Uploading character to Wan2.2 ZeroGPU...", progress=25)
+        char_remote_path = await hf_upload_file(character, "image/png")
+        
+    if not video_remote_path or not char_remote_path:
+        raise RuntimeError("Missing remote media paths for Wan2.2 Animate generation.")
     
     if job_id:
         update_job(job_id, stage="Queuing Wan2.2 Animate task...", progress=30)
@@ -477,18 +484,25 @@ async def generate_segment(segment: Path, character: Path, output_prefix: str, f
 
 async def process(
     job_id: str,
-    video: Path,
-    character: Path,
+    video: Path | None = None,
+    character: Path | None = None,
     max_duration: int = 2,
-    resolution: str = "Low Res"
+    resolution: str = "Low Res",
+    video_remote_path: str | None = None,
+    char_remote_path: str | None = None,
+    output_dir: Path | None = None
 ) -> None:
     try:
-        update_job(job_id, stage="Analyzing video...", progress=5)
-        if settings.mode == "mock":
-            await asyncio.sleep(0.6)
-        meta = probe(video)
-
-        final = video.parent / "final_character_swap.mp4"
+        update_job(job_id, stage="Analyzing request...", progress=5)
+        if not output_dir:
+            try:
+                output_dir = settings.storage_dir / job_id
+                output_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                output_dir = Path(tempfile.gettempdir()) / "character_swap_jobs" / job_id
+                output_dir.mkdir(parents=True, exist_ok=True)
+                
+        final = output_dir / "final_character_swap.mp4"
 
         if settings.mode == "hf_space":
             # Direct Hugging Face Wan2.2 Animate ZeroGPU inference
@@ -497,19 +511,26 @@ async def process(
                 character=character,
                 max_duration=max_duration,
                 resolution=resolution,
-                job_id=job_id
+                job_id=job_id,
+                video_remote_path=video_remote_path,
+                char_remote_path=char_remote_path,
+                output_dir=output_dir
             )
             
             # Restore original audio if input video had audio
-            update_job(job_id, stage="Restoring audio...", progress=96)
-            if meta.get("has_audio"):
+            if video and video.exists():
                 try:
-                    run(
-                        "ffmpeg", "-y", "-i", str(raw_generated), "-i", str(video),
-                        "-map", "0:v:0", "-map", "1:a:0?",
-                        "-c:v", "copy", "-c:a", "aac", "-shortest",
-                        str(final)
-                    )
+                    meta = probe(video)
+                    if meta.get("has_audio"):
+                        update_job(job_id, stage="Restoring audio...", progress=96)
+                        run(
+                            "ffmpeg", "-y", "-i", str(raw_generated), "-i", str(video),
+                            "-map", "0:v:0", "-map", "1:a:0?",
+                            "-c:v", "copy", "-c:a", "aac", "-shortest",
+                            str(final)
+                        )
+                    else:
+                        shutil.copy2(raw_generated, final)
                 except Exception:
                     shutil.copy2(raw_generated, final)
             else:
@@ -519,6 +540,9 @@ async def process(
             return
 
         # Sliced segmentation pipeline for ComfyUI / Mock modes
+        if not video:
+            raise RuntimeError("Local video file required for ComfyUI/Mock pipeline.")
+        meta = probe(video)
         seconds = safe_segment_seconds(meta)
         normalized = video.parent / "normalized.mp4"
         vf = f"scale='trunc(min({settings.max_generation_side}/iw,{settings.max_generation_side}/ih)*iw/16)*16':'trunc(min({settings.max_generation_side}/iw,{settings.max_generation_side}/ih)*ih/16)*16':force_original_aspect_ratio=decrease"
@@ -584,13 +608,15 @@ async def get_connectivity():
 @app.post("/api/wan-animate")
 async def create_job(
     background: BackgroundTasks,
-    video: UploadFile = File(...),
-    character: UploadFile = File(...),
+    video: UploadFile | None = File(None),
+    character: UploadFile | None = File(None),
+    video_remote_path: str | None = Form(None),
+    char_remote_path: str | None = Form(None),
     max_duration: int = Form(2),
     resolution: str = Form("Low Res")
 ):
-    if not video.filename or not character.filename:
-        raise HTTPException(400, "Both a video and character image are required.")
+    if not (video_remote_path and char_remote_path) and not (video and character and video.filename and character.filename):
+        raise HTTPException(400, "Both a video and character reference are required.")
     check = await preflight()
     if not check["ready"]:
         raise HTTPException(503, {"message": "Generation backend is not ready.", **check})
@@ -601,10 +627,14 @@ async def create_job(
     except Exception:
         directory = Path(tempfile.gettempdir()) / "character_swap_jobs" / job_id
         directory.mkdir(parents=True, exist_ok=True)
-    vp = directory / f"source{Path(video.filename).suffix.lower()}"
-    cp = directory / f"character{Path(character.filename).suffix.lower()}"
-    vp.write_bytes(await video.read())
-    cp.write_bytes(await character.read())
+        
+    vp, cp = None, None
+    if video and video.filename:
+        vp = directory / f"source{Path(video.filename).suffix.lower()}"
+        vp.write_bytes(await video.read())
+    if character and character.filename:
+        cp = directory / f"character{Path(character.filename).suffix.lower()}"
+        cp.write_bytes(await character.read())
     
     init_data = {
         "id": job_id,
@@ -615,7 +645,17 @@ async def create_job(
         "mode": settings.mode
     }
     update_job(job_id, **init_data)
-    background.add_task(process, job_id, vp, cp, max_duration, resolution)
+    background.add_task(
+        process,
+        job_id=job_id,
+        video=vp,
+        character=cp,
+        max_duration=max_duration,
+        resolution=resolution,
+        video_remote_path=video_remote_path,
+        char_remote_path=char_remote_path,
+        output_dir=directory
+    )
     return init_data
 
 @app.get("/api/jobs/{job_id}")

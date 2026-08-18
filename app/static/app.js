@@ -102,6 +102,19 @@ function setupDropzones() {
 }
 
 // Form Submission & Generation
+async function uploadToCloud(file) {
+  const fd = new FormData();
+  fd.append('files', file);
+  const res = await fetch('https://alexnasa-wan2-2-animate-zerogpu.hf.space/gradio_api/upload', {
+    method: 'POST',
+    body: fd
+  });
+  if (!res.ok) throw new Error(`Failed to upload ${file.name} to cloud`);
+  const data = await res.json();
+  if (Array.isArray(data) && data.length > 0) return data[0];
+  throw new Error(`Invalid upload response for ${file.name}`);
+}
+
 $('swap-form').addEventListener('submit', async e => {
   e.preventDefault();
 
@@ -115,12 +128,6 @@ $('swap-form').addEventListener('submit', async e => {
     return;
   }
 
-  const formData = new FormData();
-  formData.append('video', videoFile);
-  formData.append('character', charFile);
-  formData.append('max_duration', duration);
-  formData.append('resolution', resolution);
-
   const startBtn = $('start-btn');
   const progressSection = $('progress-section');
   const resultSection = $('result-section');
@@ -128,9 +135,30 @@ $('swap-form').addEventListener('submit', async e => {
   startBtn.disabled = true;
   progressSection.hidden = false;
   resultSection.hidden = true;
-  updateProgress(10, 'Uploading Media...', 'Sending video and character to ZeroGPU');
 
   try {
+    const formData = new FormData();
+    formData.append('max_duration', duration);
+    formData.append('resolution', resolution);
+
+    // Direct high-speed cloud upload (bypasses Vercel 4.5MB payload limits)
+    try {
+      updateProgress(15, 'Uploading Video...', `Transferring ${videoFile.name} (${(videoFile.size / (1024 * 1024)).toFixed(1)} MB) directly to cloud`);
+      const videoRemotePath = await uploadToCloud(videoFile);
+      
+      updateProgress(35, 'Uploading Character...', `Transferring ${charFile.name} directly to cloud`);
+      const charRemotePath = await uploadToCloud(charFile);
+      
+      formData.append('video_remote_path', videoRemotePath);
+      formData.append('char_remote_path', charRemotePath);
+    } catch (uploadErr) {
+      console.warn('Direct cloud upload failed, falling back to proxy:', uploadErr);
+      formData.append('video', videoFile);
+      formData.append('character', charFile);
+    }
+
+    updateProgress(50, 'Starting Task...', 'Registering generation job with Wan2.2 ZeroGPU');
+
     const res = await fetch('/api/jobs', { method: 'POST', body: formData });
     const rawText = await res.text();
     let jobData = null;
