@@ -221,11 +221,16 @@ def stitch_video_chunks(chunk_paths: list[Path], output_path: Path, fps: float =
     if not chunk_paths:
         raise RuntimeError("No chunk paths provided for stitching.")
     if len(chunk_paths) == 1:
-        shutil.copy2(chunk_paths[0], output_path)
+        if chunk_paths[0].resolve() != output_path.resolve():
+            shutil.copy2(chunk_paths[0], output_path)
         return output_path
         
-    concat_file = output_path.parent / "concat_chunks.txt"
-    concat_file.write_text("".join(f"file '{p.resolve().as_posix()}'\n" for p in chunk_paths), encoding="utf-8")
+    concat_file = output_path.parent / f"concat_{uuid.uuid4().hex[:6]}.txt"
+    manifest_lines = []
+    for p in chunk_paths:
+        escaped_p = p.resolve().as_posix().replace("'", "'\\''")
+        manifest_lines.append(f"file '{escaped_p}'\n")
+    concat_file.write_text("".join(manifest_lines), encoding="utf-8")
     
     run(
         "ffmpeg", "-y",
@@ -242,11 +247,16 @@ def stitch_video_chunks(chunk_paths: list[Path], output_path: Path, fps: float =
     return output_path
 
 
-def restore_audio_and_mux(source_video: Path, stitched_video: Path, final_output: Path) -> Path:
+def restore_audio_and_mux(source_video: Path | None, stitched_video: Path, final_output: Path) -> Path:
     """Muxes the original synchronized audio track from source_video onto stitched_video."""
-    meta = probe(source_video)
-    if meta.get("has_audio"):
-        try:
+    if not source_video or not source_video.exists():
+        if stitched_video.resolve() != final_output.resolve():
+            shutil.copy2(stitched_video, final_output)
+        return final_output
+
+    try:
+        meta = probe(source_video)
+        if meta.get("has_audio"):
             run(
                 "ffmpeg", "-y",
                 "-i", str(stitched_video),
@@ -259,12 +269,12 @@ def restore_audio_and_mux(source_video: Path, stitched_video: Path, final_output
                 str(final_output)
             )
             return final_output
-        except Exception:
-            shutil.copy2(stitched_video, final_output)
-            return final_output
-    else:
+    except Exception:
+        pass
+
+    if stitched_video.resolve() != final_output.resolve():
         shutil.copy2(stitched_video, final_output)
-        return final_output
+    return final_output
 
 
 async def worker_connectivity() -> dict[str, Any]:
