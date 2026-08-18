@@ -553,8 +553,12 @@ async def create_job(
     if not check["ready"]:
         raise HTTPException(503, {"message": "Generation backend is not ready.", **check})
     job_id = uuid.uuid4().hex
-    directory = settings.storage_dir / job_id
-    directory.mkdir(parents=True, exist_ok=False)
+    try:
+        directory = settings.storage_dir / job_id
+        directory.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        directory = Path(tempfile.gettempdir()) / "character_swap_jobs" / job_id
+        directory.mkdir(parents=True, exist_ok=True)
     vp = directory / f"source{Path(video.filename).suffix.lower()}"
     cp = directory / f"character{Path(character.filename).suffix.lower()}"
     vp.write_bytes(await video.read())

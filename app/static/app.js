@@ -133,8 +133,13 @@ $('swap-form').addEventListener('submit', async e => {
   try {
     const res = await fetch('/api/jobs', { method: 'POST', body: formData });
     if (!res.ok) {
-      const errData = await res.json();
-      const msg = errData.detail?.message || errData.detail || 'Could not start generation job';
+      let msg = 'Could not start generation job';
+      try {
+        const errData = await res.json();
+        msg = errData.detail?.message || errData.detail || msg;
+      } catch (jsonErr) {
+        msg = (await res.text()) || msg;
+      }
       throw new Error(msg);
     }
     const jobData = await res.json();

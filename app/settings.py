@@ -3,16 +3,30 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# On Vercel serverless environments, only /tmp is writable
-def get_default_storage_dir() -> Path:
+
+def get_writable_storage_dir(candidate: Path | str | None = None) -> Path:
     if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-        return Path(tempfile.gettempdir()) / "jobs"
-    return ROOT / "data" / "jobs"
+        tmp_dir = Path(tempfile.gettempdir()) / "character_swap_jobs"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        return tmp_dir
+    
+    target = Path(candidate) if candidate else ROOT / "data" / "jobs"
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        # Test write permission
+        test_file = target / ".write_test"
+        test_file.touch()
+        test_file.unlink()
+        return target
+    except Exception:
+        fallback = Path(tempfile.gettempdir()) / "character_swap_jobs"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
 
 
 class Settings(BaseSettings):
@@ -35,7 +49,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("WAN_WORKFLOW_PATH", "COMFY_WORKFLOW_PATH")
     )
     storage_dir: Path = Field(
-        default_factory=get_default_storage_dir,
+        default_factory=get_writable_storage_dir,
         validation_alias=AliasChoices("STORAGE_DIR", "WORK_DIR")
     )
     mode: Literal["mock", "real", "hf_space"] = Field("hf_space", validation_alias="MODE")
@@ -44,5 +58,11 @@ class Settings(BaseSettings):
     segment_retries: int = 2
     default_max_duration: int = 2
     default_resolution: str = "Low Res"
+
+    @field_validator("storage_dir", mode="after")
+    @classmethod
+    def validate_storage_dir(cls, v: Path) -> Path:
+        return get_writable_storage_dir(v)
+
 
 settings = Settings()
