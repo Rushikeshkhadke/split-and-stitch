@@ -552,14 +552,20 @@ async def generate_hf_wan_animate(
                             if isinstance(data, dict) and "error" in data:
                                 error_msg = data.get("error")
                                 break
-                            if isinstance(data, list) and len(data) >= 1 and isinstance(data[0], dict):
+                            if isinstance(data, list) and len(data) >= 1:
                                 # Completed! Extract output index 0
                                 out_item = data[0]
-                                final_video_url = out_item.get("url")
-                                if not final_video_url and "video" in out_item:
-                                    final_video_url = out_item["video"].get("url")
+                                if isinstance(out_item, str):
+                                    final_video_url = out_item
+                                elif isinstance(out_item, dict):
+                                    final_video_url = out_item.get("url") or out_item.get("path")
+                                    if not final_video_url and "video" in out_item:
+                                        if isinstance(out_item["video"], dict):
+                                            final_video_url = out_item["video"].get("url") or out_item["video"].get("path")
+                                        elif isinstance(out_item["video"], str):
+                                            final_video_url = out_item["video"]
                                 break
-                        except Exception as e:
+                        except Exception:
                             pass
                             
             if error_msg:
@@ -578,6 +584,13 @@ async def generate_hf_wan_animate(
             if job_id:
                 update_job(job_id, stage="Downloading final video from Wan2.2...", progress=92)
                 
+            # Normalize download URL
+            if final_video_url and not final_video_url.startswith("http"):
+                if "/gradio_api/file=" in final_video_url or "/file=" in final_video_url:
+                    final_video_url = hf_url(f"/{final_video_url.lstrip('/')}")
+                else:
+                    final_video_url = hf_url(f"/gradio_api/file={final_video_url}")
+
             # 4. Download output video
             target_dir = output_dir or (video.parent if video else Path(tempfile.gettempdir()))
             target_dir.mkdir(parents=True, exist_ok=True)
