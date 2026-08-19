@@ -106,9 +106,28 @@ def probe(video: Path) -> dict[str, Any]:
         if fps <= 0 or math.isnan(fps):
             fps = 30.0
             
-        duration = float(stream.get("duration") or data.get("format", {}).get("duration") or 2.0)
-        if duration <= 0 or math.isnan(duration):
-            duration = 2.0
+        duration = None
+        for candidate in [stream.get("duration"), data.get("format", {}).get("duration")]:
+            if candidate and str(candidate).strip().lower() not in {"n/a", "none", "null", ""}:
+                try:
+                    d_parsed = float(candidate)
+                    if d_parsed > 0 and not math.isnan(d_parsed):
+                        duration = d_parsed
+                        break
+                except Exception:
+                    pass
+                    
+        # If duration is still None, use ffprobe format=duration
+        if duration is None:
+            try:
+                dur_raw = run("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(video)).strip()
+                if dur_raw and dur_raw.lower() != "n/a":
+                    duration = float(dur_raw)
+            except Exception:
+                pass
+                
+        if duration is None or duration <= 0:
+            duration = 10.0
             
         return {
             "width": int(stream.get("width", 480)),
@@ -123,7 +142,7 @@ def probe(video: Path) -> dict[str, Any]:
             "width": 480,
             "height": 480,
             "fps": 30.0,
-            "duration": 2.0,
+            "duration": 10.0,
             "has_audio": True
         }
 
@@ -864,6 +883,14 @@ async def get_connectivity():
         "mode": settings.mode,
         "worker_url": settings.hf_space_url if settings.mode == "hf_space" else settings.comfyui_url,
         **(await worker_connectivity())
+    }
+
+@app.get("/api/stats")
+async def get_stats():
+    return {
+        "status": "healthy",
+        "jobs_count": len(jobs),
+        "mode": settings.mode
     }
 
 @app.post("/api/jobs")

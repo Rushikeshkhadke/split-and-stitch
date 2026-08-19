@@ -169,24 +169,25 @@ $('swap-form').addEventListener('submit', async e => {
     const formData = new FormData();
     formData.append('max_duration', duration);
     formData.append('resolution', resolution);
+    formData.append('video', videoFile);
+    formData.append('character', charFile);
 
-    // Direct high-speed cloud upload (bypasses Vercel 4.5MB payload limits)
-    try {
-      updateProgress(15, 'Uploading Video...', `Transferring ${videoFile.name} (${(videoFile.size / (1024 * 1024)).toFixed(1)} MB) directly to cloud`);
-      const videoRemotePath = await uploadToCloud(videoFile);
-      
-      updateProgress(35, 'Uploading Character...', `Transferring ${charFile.name} directly to cloud`);
-      const charRemotePath = await uploadToCloud(charFile);
-      
-      formData.append('video_remote_path', videoRemotePath);
-      formData.append('char_remote_path', charRemotePath);
-    } catch (uploadErr) {
-      console.warn('Direct cloud upload failed, falling back to proxy:', uploadErr);
-      formData.append('video', videoFile);
-      formData.append('character', charFile);
+    // If file is large and running on Vercel cloud, also provide remote cloud paths
+    const isCloud = window.location.hostname.includes('vercel.app');
+    const isLarge = (videoFile.size + charFile.size) > 4.0 * 1024 * 1024;
+    if (isCloud && isLarge) {
+      try {
+        updateProgress(15, 'Uploading Video...', `Transferring ${videoFile.name} (${(videoFile.size / (1024 * 1024)).toFixed(1)} MB) to cloud`);
+        const videoRemotePath = await uploadToCloud(videoFile);
+        const charRemotePath = await uploadToCloud(charFile);
+        formData.set('video_remote_path', videoRemotePath);
+        formData.set('char_remote_path', charRemotePath);
+      } catch (uploadErr) {
+        console.warn('Cloud upload notice:', uploadErr);
+      }
     }
 
-    updateProgress(50, 'Starting Task...', 'Registering generation job with Wan2.2 ZeroGPU');
+    updateProgress(35, 'Starting Task...', 'Registering generation job for automatic chunk processing');
 
     const res = await fetch('/api/jobs', { method: 'POST', body: formData });
     const rawText = await res.text();
