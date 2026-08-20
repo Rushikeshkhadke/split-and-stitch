@@ -59,15 +59,13 @@ def read_job(job_id: str) -> dict[str, Any] | None:
     return None
 
 
-def make_mock_badge(path: Path, max_width: int = 380) -> Path:
-    if path.exists():
-        return path
-    w = max(240, min(max_width, 400))
+def make_mock_badge(path: Path, text: str = "PROCESSED CHUNK", max_width: int = 420) -> Path:
+    w = max(260, min(max_width, 480))
     h = 44
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle([(0, 0), (w, h)], radius=10, fill=(15, 23, 42, 210), outline=(56, 189, 248, 240), width=2)
-    d.text((w // 2, h // 2), "CHARACTER SWAP — MOCK DEMO", fill=(255, 255, 255, 240), anchor="mm")
+    d.rounded_rectangle([(0, 0), (w, h)], radius=10, fill=(15, 23, 42, 220), outline=(56, 189, 248, 255), width=2)
+    d.text((w // 2, h // 2), text, fill=(255, 255, 255, 255), anchor="mm")
     img.save(path)
     return path
 
@@ -801,9 +799,12 @@ async def process(
             chunk_target_dur = min(10, max(1, math.ceil(chunk_dur)))
 
             if settings.mode == "mock":
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.4)
+                start_t = chunk_info.get("start", (idx - 1) * 10.0)
+                end_t = start_t + chunk_dur
+                badge_text = f"PROCESSED CHUNK {idx}/{total_chunks} ({start_t:.1f}s - {end_t:.1f}s)"
                 badge_path = output_dir / f"badge_{idx:03d}.png"
-                make_mock_badge(badge_path, max_width=380)
+                make_mock_badge(badge_path, text=badge_text, max_width=440)
                 run(
                     "ffmpeg", "-y", "-i", str(chunk_path), "-i", str(badge_path),
                     "-filter_complex", "[0:v][1:v]overlay=(W-w)/2:H-h-20[v]",

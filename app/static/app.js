@@ -17,7 +17,7 @@ async function initApp() {
     if (data.ready) {
       statusPill.className = 'status-pill ready';
       if (data.mode === 'mock') {
-        statusText.textContent = 'Mock Mode (Simulated)';
+        statusText.textContent = 'Pipeline Test Mode (Instant Split & Stitch)';
       } else if (data.mode === 'hf_space') {
         statusText.textContent = 'ZeroGPU Online';
       } else {
