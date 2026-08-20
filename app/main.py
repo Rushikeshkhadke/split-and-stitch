@@ -145,6 +145,47 @@ def probe(video: Path) -> dict[str, Any]:
         }
 
 
+def prepare_consistent_character(character_path: Path, video_path: Path, output_path: Path) -> Path:
+    """Prepares and enhances the character reference image to match the video's target aspect ratio without distortion."""
+    try:
+        meta = probe(video_path)
+        vw, vh = meta.get("width", 480), meta.get("height", 480)
+        target_ratio = float(vw) / float(vh)
+
+        with Image.open(character_path) as im:
+            im = im.convert("RGBA")
+            cw, ch = im.size
+            char_ratio = float(cw) / float(ch)
+
+            # If aspect ratio is already within 5%, return clean PNG
+            if abs(char_ratio - target_ratio) < 0.05:
+                im.convert("RGB").save(output_path, "PNG")
+                return output_path
+
+            if char_ratio > target_ratio:
+                # Character is wider than video -> fit width, pad top/bottom
+                new_w = cw
+                new_h = int(cw / target_ratio)
+            else:
+                # Character is taller than video -> fit height, pad left/right
+                new_h = ch
+                new_w = int(ch * target_ratio)
+
+            # Center the character on clean canvas
+            bg = Image.new("RGBA", (new_w, new_h), (0, 0, 0, 0))
+            offset = ((new_w - cw) // 2, (new_h - ch) // 2)
+            bg.paste(im, offset, mask=im.split()[3] if im.mode == "RGBA" else None)
+            
+            # Save high-res RGB image
+            bg_rgb = Image.new("RGB", (new_w, new_h), (240, 240, 240))
+            bg_rgb.paste(bg, mask=bg.split()[3])
+            bg_rgb.save(output_path, "PNG")
+            return output_path
+    except Exception:
+        shutil.copy2(character_path, output_path)
+        return output_path
+
+
 def safe_segment_seconds(meta: dict[str, Any]) -> float:
     model_frame_limit = 77 / max(meta["fps"], 1)
     return max(1.0, min(settings.max_segment_seconds, model_frame_limit))
@@ -775,6 +816,11 @@ async def process(
             total_duration=total_duration
         )
 
+        # Optimize character image for video aspect ratio to prevent shape distortion
+        if character and character.exists():
+            opt_char = output_dir / "character_aspect_aligned.png"
+            character = prepare_consistent_character(character, video, opt_char)
+
         for chunk_info in chunks:
             idx = chunk_info["index"]
             chunk_path: Path = chunk_info["path"]
@@ -798,6 +844,27 @@ async def process(
             # Max duration for this chunk (capped at 10)
             chunk_target_dur = min(10, max(1, math.ceil(chunk_dur)))
 
+            # Multi-Chunk Consistency Chaining:
+            # Use the ending frame of the previous chunk as the reference so lighting, pose, and clothing lock in seamlessly
+            current_character = character
+            if idx > 1:
+                prev_out = output_dir / f"output_chunk_{idx-1:03d}.mp4"
+                if prev_out.exists():
+                    chained_frame = output_dir / f"handoff_frame_{idx-1:03d}.png"
+                    try:
+                        run(
+                            "ffmpeg", "-y",
+                            "-sseof", "-0.1",
+                            "-i", str(prev_out),
+                            "-vframes", "1",
+                            "-q:v", "1",
+                            str(chained_frame)
+                        )
+                        if chained_frame.exists() and chained_frame.stat().st_size > 1000:
+                            current_character = chained_frame
+                    except Exception:
+                        current_character = character
+
             if settings.mode == "mock":
                 await asyncio.sleep(0.4)
                 start_t = chunk_info.get("start", (idx - 1) * 10.0)
@@ -814,7 +881,7 @@ async def process(
             elif settings.mode == "hf_space":
                 gen_file = await generate_hf_wan_animate(
                     video=chunk_path,
-                    character=character,
+                    character=current_character,
                     max_duration=chunk_target_dur,
                     resolution=resolution,
                     job_id=job_id,
@@ -824,7 +891,7 @@ async def process(
             else:
                 # ComfyUI mode
                 frame_count = max(1, round(chunk_dur * fps))
-                gen_file = await generate_segment(chunk_path, character, f"swap_{job_id}_{idx:03d}", frame_count)
+                gen_file = await generate_segment(chunk_path, current_character, f"swap_{job_id}_{idx:03d}", frame_count)
                 shutil.copy2(gen_file, out_chunk_path)
 
             chunk_outputs = [c for c in chunk_outputs if c["index"] != idx]
