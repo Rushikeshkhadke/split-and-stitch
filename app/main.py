@@ -661,6 +661,135 @@ async def generate_hf_wan_animate(
         raise RuntimeError("No GPU was available after multiple retries. Please try again or authenticate with a Hugging Face token.")
 
 
+async def generate_hf_liveportrait(
+    video: Path,
+    character: Path,
+    job_id: str | None = None,
+    output_dir: Path | None = None
+) -> Path:
+    """Submits generation to KlingTeam/LivePortrait Space and downloads the animated output MP4."""
+    LP_BASE = "https://klingteam-liveportrait.hf.space"
+
+    timeout = httpx.Timeout(connect=30, read=300, write=300, pool=30)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        # 1. Upload character portrait (source face)
+        if job_id:
+            update_job(job_id, stage="Uploading portrait to LivePortrait...", progress=15)
+        with open(character, "rb") as f:
+            mime = "image/png" if character.suffix.lower() == ".png" else "image/jpeg"
+            r_up1 = await client.post(
+                f"{LP_BASE}/upload",
+                files={"files": (character.name, f, mime)},
+                headers={"Authorization": f"Bearer {settings.hf_token}"}
+            )
+            r_up1.raise_for_status()
+            char_remote = r_up1.json()[0]
+
+        # 2. Upload driving video
+        if job_id:
+            update_job(job_id, stage="Uploading driving video to LivePortrait...", progress=25)
+        with open(video, "rb") as f:
+            r_up2 = await client.post(
+                f"{LP_BASE}/upload",
+                files={"files": (video.name, f, "video/mp4")},
+                headers={"Authorization": f"Bearer {settings.hf_token}"}
+            )
+            r_up2.raise_for_status()
+            vid_remote = r_up2.json()[0]
+
+        if job_id:
+            update_job(job_id, stage="Queuing LivePortrait task...", progress=30)
+
+        # 3. Call gpu_wrapped_execute_video
+        payload = {
+            "data": [
+                {"path": char_remote, "meta": {"_type": "gradio.FileData"}},
+                {"path": vid_remote, "meta": {"_type": "gradio.FileData"}},
+                True,   # relative motion
+                True,   # do crop
+                True    # paste-back
+            ]
+        }
+        r_call = await client.post(
+            f"{LP_BASE}/call/gpu_wrapped_execute_video",
+            json=payload,
+            headers={"Authorization": f"Bearer {settings.hf_token}"}
+        )
+        r_call.raise_for_status()
+        event_id = r_call.json().get("event_id")
+        if not event_id:
+            raise RuntimeError(f"LivePortrait returned no event_id: {r_call.text}")
+
+        if job_id:
+            update_job(job_id, stage="Processing with LivePortrait ZeroGPU...", progress=50)
+
+        # 4. Stream SSE for result
+        sse_url = f"{LP_BASE}/call/gpu_wrapped_execute_video/{event_id}"
+        final_video_url = None
+        error_msg = None
+
+        async with client.stream("GET", sse_url, headers={"Authorization": f"Bearer {settings.hf_token}"}, timeout=600) as stream:
+            async for line in stream.aiter_lines():
+                if not line:
+                    continue
+                if line.startswith("event: heartbeat"):
+                    if job_id:
+                        current = read_job(job_id) or {}
+                        current_p = min(90, current.get("progress", 50) + 5)
+                        update_job(job_id, stage="LivePortrait animating frames...", progress=current_p)
+                elif line.startswith("event: error"):
+                    error_msg = "LivePortrait ZeroGPU error"
+                elif line.startswith("data:"):
+                    raw_data = line[5:].strip()
+                    if not raw_data or raw_data == "null":
+                        continue
+                    try:
+                        data = json.loads(raw_data)
+                        if isinstance(data, dict) and "error" in data:
+                            error_msg = str(data.get("error") or "LivePortrait generation error")
+                            break
+                        if isinstance(data, list) and len(data) >= 1:
+                            # Output indices: [0]=animated_video_original_space, [1]=animated_video
+                            # Prefer the paste-back result at index 1
+                            for out_item in reversed(data):
+                                if isinstance(out_item, dict):
+                                    url = out_item.get("url") or out_item.get("path")
+                                    if url:
+                                        final_video_url = url
+                                        break
+                                elif isinstance(out_item, str) and out_item:
+                                    final_video_url = out_item
+                                    break
+                            break
+                    except Exception:
+                        pass
+
+        if error_msg:
+            raise RuntimeError(error_msg)
+        if not final_video_url:
+            raise RuntimeError("LivePortrait generation completed without returning an output video URL.")
+
+        if job_id:
+            update_job(job_id, stage="Downloading LivePortrait output...", progress=92)
+
+        # Normalize download URL
+        if not final_video_url.startswith("http"):
+            final_video_url = f"{LP_BASE}/{final_video_url.lstrip('/')}"
+
+        # 5. Download output
+        target_dir = output_dir or video.parent
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"lp_generated_{uuid.uuid4().hex[:6]}.mp4"
+        r_down = await client.get(
+            final_video_url,
+            headers={"Authorization": f"Bearer {settings.hf_token}"},
+            timeout=120
+        )
+        r_down.raise_for_status()
+        target.write_bytes(r_down.content)
+        return target
+
+
 async def generate_segment(segment: Path, character: Path, output_prefix: str, frames: int) -> Path:
     if settings.mode == "mock":
         await asyncio.sleep(1.2)
@@ -721,7 +850,8 @@ async def process(
     video_remote_path: str | None = None,
     char_remote_path: str | None = None,
     output_dir: Path | None = None,
-    resume_from_chunk: int = 1
+    resume_from_chunk: int = 1,
+    engine: str = "wan22"
 ) -> None:
     try:
         update_job(job_id, stage="Analyzing request...", progress=5)
@@ -879,14 +1009,22 @@ async def process(
                     str(out_chunk_path)
                 )
             elif settings.mode == "hf_space":
-                gen_file = await generate_hf_wan_animate(
-                    video=chunk_path,
-                    character=current_character,
-                    max_duration=chunk_target_dur,
-                    resolution=resolution,
-                    job_id=job_id,
-                    output_dir=output_dir
-                )
+                if engine == "liveportrait":
+                    gen_file = await generate_hf_liveportrait(
+                        video=chunk_path,
+                        character=current_character,
+                        job_id=job_id,
+                        output_dir=output_dir
+                    )
+                else:
+                    gen_file = await generate_hf_wan_animate(
+                        video=chunk_path,
+                        character=current_character,
+                        max_duration=chunk_target_dur,
+                        resolution=resolution,
+                        job_id=job_id,
+                        output_dir=output_dir
+                    )
                 shutil.copy2(gen_file, out_chunk_path)
             else:
                 # ComfyUI mode
@@ -1015,7 +1153,8 @@ async def create_job(
         resolution=resolution,
         video_remote_path=video_remote_path,
         char_remote_path=char_remote_path,
-        output_dir=directory
+        output_dir=directory,
+        engine=engine
     )
     return init_data
 
