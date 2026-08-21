@@ -668,8 +668,8 @@ async def generate_hf_roop(
     job_id: str | None = None,
     output_dir: Path | None = None
 ) -> Path:
-    """Face-swaps character into video using tonyassi/face-swap (CPU-based, no quota cost)."""
-    ROOP_BASE = "https://tonyassi-face-swap.hf.space"
+    """Face-swaps character into video using tonyassi/video-face-swap (CPU-based, no quota cost)."""
+    ROOP_BASE = "https://tonyassi-video-face-swap.hf.space"
     timeout = httpx.Timeout(connect=60, read=600, write=120, pool=30)
 
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -679,27 +679,28 @@ async def generate_hf_roop(
         # Upload source face (character image)
         with open(character, "rb") as f:
             mime = "image/png" if character.suffix.lower() == ".png" else "image/jpeg"
-            r1 = await client.post(f"{ROOP_BASE}/upload", files={"files": (character.name, f, mime)})
+            r1 = await client.post(f"{ROOP_BASE}/gradio_api/upload", files={"files": (character.name, f, mime)})
             r1.raise_for_status()
             char_remote = r1.json()[0]
 
         # Upload target video
         with open(video, "rb") as f:
-            r2 = await client.post(f"{ROOP_BASE}/upload", files={"files": (video.name, f, "video/mp4")})
+            r2 = await client.post(f"{ROOP_BASE}/gradio_api/upload", files={"files": (video.name, f, "video/mp4")})
             r2.raise_for_status()
             vid_remote = r2.json()[0]
 
         if job_id:
             update_job(job_id, stage="Roop processing face swap...", progress=40)
 
-        # Call swap_faces endpoint: inputs [source_image, target_video]
+        # Call generate endpoint: inputs [source_image, target_video, gender]
         payload = {
             "data": [
                 {"path": char_remote, "meta": {"_type": "gradio.FileData"}},
-                {"path": vid_remote, "meta": {"_type": "gradio.FileData"}}
+                {"video": {"path": vid_remote, "meta": {"_type": "gradio.FileData"}}},
+                "all"
             ]
         }
-        r_call = await client.post(f"{ROOP_BASE}/call/swap_faces", json=payload)
+        r_call = await client.post(f"{ROOP_BASE}/gradio_api/call/generate", json=payload)
         r_call.raise_for_status()
         event_id = r_call.json().get("event_id")
         if not event_id:
@@ -710,7 +711,7 @@ async def generate_hf_roop(
 
         final_video_url = None
         error_msg = None
-        sse_url = f"{ROOP_BASE}/call/swap_faces/{event_id}"
+        sse_url = f"{ROOP_BASE}/gradio_api/call/generate/{event_id}"
 
         async with client.stream("GET", sse_url, timeout=600) as stream:
             async for line in stream.aiter_lines():
@@ -893,7 +894,7 @@ async def generate_hf_echomimic(
         with open(character, "rb") as f:
             mime = "image/png" if character.suffix.lower() == ".png" else "image/jpeg"
             r1 = await client.post(
-                f"{EM_BASE}/upload",
+                f"{EM_BASE}/gradio_api/upload",
                 files={"files": (character.name, f, mime)},
                 headers={"Authorization": f"Bearer {settings.hf_token}"}
             )
@@ -903,7 +904,7 @@ async def generate_hf_echomimic(
         with open(audio, "rb") as f:
             audio_mime = "audio/mpeg" if audio.suffix.lower() == ".mp3" else "audio/wav"
             r2 = await client.post(
-                f"{EM_BASE}/upload",
+                f"{EM_BASE}/gradio_api/upload",
                 files={"files": (audio.name, f, audio_mime)},
                 headers={"Authorization": f"Bearer {settings.hf_token}"}
             )
@@ -935,7 +936,7 @@ async def generate_hf_echomimic(
             ]
         }
         r_call = await client.post(
-            f"{EM_BASE}/call/generate_video",
+            f"{EM_BASE}/gradio_api/call/generate_video",
             json=payload,
             headers={"Authorization": f"Bearer {settings.hf_token}"}
         )
@@ -951,7 +952,7 @@ async def generate_hf_echomimic(
         error_msg = None
 
         async with client.stream(
-            "GET", f"{EM_BASE}/call/generate_video/{event_id}",
+            "GET", f"{EM_BASE}/gradio_api/call/generate_video/{event_id}",
             headers={"Authorization": f"Bearer {settings.hf_token}"},
             timeout=600
         ) as stream:
@@ -1562,6 +1563,7 @@ async def retry_job(job_id: str, background: BackgroundTasks):
         
     vp = next(directory.glob("source*"), None)
     cp = next(directory.glob("character*"), None)
+    ap = next(directory.glob("audio*"), None)
     
     update_job(job_id, stage="Resuming...", failed=False, error=None)
     background.add_task(
@@ -1569,10 +1571,12 @@ async def retry_job(job_id: str, background: BackgroundTasks):
         job_id=job_id,
         video=vp,
         character=cp,
+        audio=ap,
         max_duration=job.get("max_duration", 2),
         resolution=job.get("resolution", "Low Res"),
         output_dir=directory,
-        resume_from_chunk=job.get("current_chunk", 1)
+        resume_from_chunk=job.get("current_chunk", 1),
+        engine=job.get("engine", "wan22")
     )
     return read_job(job_id)
 
