@@ -166,7 +166,9 @@ $('swap-form').addEventListener('submit', async e => {
   resultSection.hidden = true;
 
   try {
+    const engine = $('engine-select') ? $('engine-select').value : 'wan22';
     const formData = new FormData();
+    formData.append('engine', engine);
     formData.append('max_duration', duration);
     formData.append('resolution', resolution);
     formData.append('video', videoFile);

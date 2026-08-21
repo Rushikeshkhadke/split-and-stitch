@@ -970,7 +970,8 @@ async def create_job(
     video_remote_path: str | None = Form(None),
     char_remote_path: str | None = Form(None),
     max_duration: str = Form("auto"),
-    resolution: str = Form("Low Res")
+    resolution: str = Form("Low Res"),
+    engine: str = Form("wan22")
 ):
     if not (video_remote_path and char_remote_path) and not (video and character and video.filename and character.filename):
         raise HTTPException(400, "Both a video and character reference are required.")
@@ -1000,6 +1001,7 @@ async def create_job(
         "complete": False,
         "failed": False,
         "mode": settings.mode,
+        "engine": engine,
         "max_duration": max_duration,
         "resolution": resolution
     }
