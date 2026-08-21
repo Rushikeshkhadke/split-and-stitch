@@ -661,6 +661,354 @@ async def generate_hf_wan_animate(
         raise RuntimeError("No GPU was available after multiple retries. Please try again or authenticate with a Hugging Face token.")
 
 
+
+async def generate_hf_roop(
+    video: Path,
+    character: Path,
+    job_id: str | None = None,
+    output_dir: Path | None = None
+) -> Path:
+    """Face-swaps character into video using tonyassi/face-swap (CPU-based, no quota cost)."""
+    ROOP_BASE = "https://tonyassi-face-swap.hf.space"
+    timeout = httpx.Timeout(connect=60, read=600, write=120, pool=30)
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        if job_id:
+            update_job(job_id, stage="Uploading to Roop Face Swap...", progress=20)
+
+        # Upload source face (character image)
+        with open(character, "rb") as f:
+            mime = "image/png" if character.suffix.lower() == ".png" else "image/jpeg"
+            r1 = await client.post(f"{ROOP_BASE}/upload", files={"files": (character.name, f, mime)})
+            r1.raise_for_status()
+            char_remote = r1.json()[0]
+
+        # Upload target video
+        with open(video, "rb") as f:
+            r2 = await client.post(f"{ROOP_BASE}/upload", files={"files": (video.name, f, "video/mp4")})
+            r2.raise_for_status()
+            vid_remote = r2.json()[0]
+
+        if job_id:
+            update_job(job_id, stage="Roop processing face swap...", progress=40)
+
+        # Call swap_faces endpoint: inputs [source_image, target_video]
+        payload = {
+            "data": [
+                {"path": char_remote, "meta": {"_type": "gradio.FileData"}},
+                {"path": vid_remote, "meta": {"_type": "gradio.FileData"}}
+            ]
+        }
+        r_call = await client.post(f"{ROOP_BASE}/call/swap_faces", json=payload)
+        r_call.raise_for_status()
+        event_id = r_call.json().get("event_id")
+        if not event_id:
+            raise RuntimeError(f"Roop returned no event_id: {r_call.text}")
+
+        if job_id:
+            update_job(job_id, stage="Roop generating swapped video...", progress=55)
+
+        final_video_url = None
+        error_msg = None
+        sse_url = f"{ROOP_BASE}/call/swap_faces/{event_id}"
+
+        async with client.stream("GET", sse_url, timeout=600) as stream:
+            async for line in stream.aiter_lines():
+                if not line:
+                    continue
+                if line.startswith("event: heartbeat"):
+                    if job_id:
+                        cur = read_job(job_id) or {}
+                        update_job(job_id, stage="Roop swapping faces...", progress=min(90, cur.get("progress", 55) + 3))
+                elif line.startswith("data:"):
+                    raw = line[5:].strip()
+                    if not raw or raw == "null":
+                        continue
+                    try:
+                        data = json.loads(raw)
+                        if isinstance(data, dict) and "error" in data:
+                            error_msg = str(data.get("error") or "Roop error")
+                            break
+                        if isinstance(data, list) and len(data) >= 1:
+                            for item in data:
+                                if isinstance(item, dict):
+                                    url = item.get("url") or item.get("path")
+                                    if url:
+                                        final_video_url = url
+                                        break
+                                elif isinstance(item, str) and item:
+                                    final_video_url = item
+                                    break
+                            break
+                    except Exception:
+                        pass
+
+        if error_msg:
+            raise RuntimeError(error_msg)
+        if not final_video_url:
+            raise RuntimeError("Roop completed without returning an output video URL.")
+
+        if job_id:
+            update_job(job_id, stage="Downloading Roop output...", progress=92)
+
+        if not final_video_url.startswith("http"):
+            final_video_url = f"{ROOP_BASE}/{final_video_url.lstrip('/')}"
+
+        target_dir = output_dir or video.parent
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"roop_generated_{uuid.uuid4().hex[:6]}.mp4"
+        r_down = await client.get(final_video_url, timeout=120)
+        r_down.raise_for_status()
+        target.write_bytes(r_down.content)
+        return target
+
+
+async def generate_hf_sadtalker(
+    character: Path,
+    audio: Path,
+    job_id: str | None = None,
+    output_dir: Path | None = None
+) -> Path:
+    """Animates a portrait image with speech audio using SadTalker (CPU, zero quota cost)."""
+    ST_BASE = "https://kevinwang676-sadtalker.hf.space"
+    timeout = httpx.Timeout(connect=60, read=600, write=120, pool=30)
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        if job_id:
+            update_job(job_id, stage="Uploading portrait to SadTalker...", progress=20)
+
+        with open(character, "rb") as f:
+            mime = "image/png" if character.suffix.lower() == ".png" else "image/jpeg"
+            r1 = await client.post(f"{ST_BASE}/upload", files={"files": (character.name, f, mime)})
+            r1.raise_for_status()
+            char_remote = r1.json()[0]
+
+        with open(audio, "rb") as f:
+            audio_mime = "audio/mpeg" if audio.suffix.lower() == ".mp3" else "audio/wav"
+            r2 = await client.post(f"{ST_BASE}/upload", files={"files": (audio.name, f, audio_mime)})
+            r2.raise_for_status()
+            audio_remote = r2.json()[0]
+
+        if job_id:
+            update_job(job_id, stage="SadTalker generating talking head...", progress=40)
+
+        # SadTalker main generate endpoint: image, audio, preprocess, still_mode, use_enhancer, batch_size, size, pose_style, exp_scale
+        payload = {
+            "data": [
+                {"path": char_remote, "meta": {"_type": "gradio.FileData"}},
+                {"path": audio_remote, "meta": {"_type": "gradio.FileData"}},
+                "crop",     # preprocess
+                False,      # still mode
+                True,       # use_enhancer (GFPGAN)
+                2,          # batch_size
+                256,        # face model resolution
+                0,          # pose_style
+                1.0,        # expression_scale
+                False,      # use_ref_video
+                None,       # ref_video
+                "pose",     # ref_info
+                False,      # use_idle_mode
+                None,       # length_of_video
+                True,       # use_blink
+                "png"       # result_format
+            ]
+        }
+        r_call = await client.post(f"{ST_BASE}/call/test", json=payload)
+        r_call.raise_for_status()
+        event_id = r_call.json().get("event_id")
+        if not event_id:
+            raise RuntimeError(f"SadTalker returned no event_id: {r_call.text}")
+
+        if job_id:
+            update_job(job_id, stage="SadTalker animating face...", progress=55)
+
+        final_video_url = None
+        error_msg = None
+
+        async with client.stream("GET", f"{ST_BASE}/call/test/{event_id}", timeout=600) as stream:
+            async for line in stream.aiter_lines():
+                if not line:
+                    continue
+                if line.startswith("event: heartbeat"):
+                    if job_id:
+                        cur = read_job(job_id) or {}
+                        update_job(job_id, stage="SadTalker rendering...", progress=min(90, cur.get("progress", 55) + 3))
+                elif line.startswith("data:"):
+                    raw = line[5:].strip()
+                    if not raw or raw == "null":
+                        continue
+                    try:
+                        data = json.loads(raw)
+                        if isinstance(data, dict) and "error" in data:
+                            error_msg = str(data.get("error") or "SadTalker error")
+                            break
+                        if isinstance(data, list) and len(data) >= 1:
+                            for item in data:
+                                if isinstance(item, dict):
+                                    url = item.get("url") or item.get("path")
+                                    if url:
+                                        final_video_url = url
+                                        break
+                                elif isinstance(item, str) and item:
+                                    final_video_url = item
+                                    break
+                            break
+                    except Exception:
+                        pass
+
+        if error_msg:
+            raise RuntimeError(error_msg)
+        if not final_video_url:
+            raise RuntimeError("SadTalker completed without returning an output video URL.")
+
+        if job_id:
+            update_job(job_id, stage="Downloading SadTalker output...", progress=92)
+
+        if not final_video_url.startswith("http"):
+            final_video_url = f"{ST_BASE}/{final_video_url.lstrip('/')}"
+
+        target_dir = output_dir or character.parent
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"sadtalker_generated_{uuid.uuid4().hex[:6]}.mp4"
+        r_down = await client.get(final_video_url, timeout=120)
+        r_down.raise_for_status()
+        target.write_bytes(r_down.content)
+        return target
+
+
+async def generate_hf_echomimic(
+    character: Path,
+    audio: Path,
+    job_id: str | None = None,
+    output_dir: Path | None = None
+) -> Path:
+    """Audio-driven lip-sync portrait animation using EchoMimic (ZeroGPU A10G)."""
+    EM_BASE = "https://fffiloni-echomimic.hf.space"
+    timeout = httpx.Timeout(connect=30, read=600, write=120, pool=30)
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        if job_id:
+            update_job(job_id, stage="Uploading portrait to EchoMimic...", progress=20)
+
+        with open(character, "rb") as f:
+            mime = "image/png" if character.suffix.lower() == ".png" else "image/jpeg"
+            r1 = await client.post(
+                f"{EM_BASE}/upload",
+                files={"files": (character.name, f, mime)},
+                headers={"Authorization": f"Bearer {settings.hf_token}"}
+            )
+            r1.raise_for_status()
+            char_remote = r1.json()[0]
+
+        with open(audio, "rb") as f:
+            audio_mime = "audio/mpeg" if audio.suffix.lower() == ".mp3" else "audio/wav"
+            r2 = await client.post(
+                f"{EM_BASE}/upload",
+                files={"files": (audio.name, f, audio_mime)},
+                headers={"Authorization": f"Bearer {settings.hf_token}"}
+            )
+            r2.raise_for_status()
+            audio_remote = r2.json()[0]
+
+        if job_id:
+            update_job(job_id, stage="EchoMimic generating lip-sync video...", progress=40)
+
+        # EchoMimic generate_video: image, audio, width, height, length, seed, facemask_dilation,
+        # facecrop_dilation, context_frames, context_overlap, cfg, steps, sample_rate, fps, device
+        payload = {
+            "data": [
+                {"path": char_remote, "meta": {"_type": "gradio.FileData"}},
+                {"path": audio_remote, "meta": {"_type": "gradio.FileData"}},
+                512,    # width
+                512,    # height
+                120,    # length (frames)
+                -1,     # seed (-1 = random)
+                0.5,    # facemask_dilation_ratio
+                1.5,    # facecrop_dilation_ratio
+                12,     # context_frames
+                3,      # context_overlap
+                2.5,    # cfg
+                20,     # steps
+                16000,  # sample_rate
+                24,     # fps
+                "cuda"  # device
+            ]
+        }
+        r_call = await client.post(
+            f"{EM_BASE}/call/generate_video",
+            json=payload,
+            headers={"Authorization": f"Bearer {settings.hf_token}"}
+        )
+        r_call.raise_for_status()
+        event_id = r_call.json().get("event_id")
+        if not event_id:
+            raise RuntimeError(f"EchoMimic returned no event_id: {r_call.text}")
+
+        if job_id:
+            update_job(job_id, stage="EchoMimic animating lip-sync...", progress=55)
+
+        final_video_url = None
+        error_msg = None
+
+        async with client.stream(
+            "GET", f"{EM_BASE}/call/generate_video/{event_id}",
+            headers={"Authorization": f"Bearer {settings.hf_token}"},
+            timeout=600
+        ) as stream:
+            async for line in stream.aiter_lines():
+                if not line:
+                    continue
+                if line.startswith("event: heartbeat"):
+                    if job_id:
+                        cur = read_job(job_id) or {}
+                        update_job(job_id, stage="EchoMimic rendering frames...", progress=min(90, cur.get("progress", 55) + 3))
+                elif line.startswith("data:"):
+                    raw = line[5:].strip()
+                    if not raw or raw == "null":
+                        continue
+                    try:
+                        data = json.loads(raw)
+                        if isinstance(data, dict) and "error" in data:
+                            error_msg = str(data.get("error") or "EchoMimic error")
+                            break
+                        if isinstance(data, list) and len(data) >= 1:
+                            for item in data:
+                                if isinstance(item, dict):
+                                    url = item.get("url") or item.get("path")
+                                    if url:
+                                        final_video_url = url
+                                        break
+                                elif isinstance(item, str) and item:
+                                    final_video_url = item
+                                    break
+                            break
+                    except Exception:
+                        pass
+
+        if error_msg:
+            raise RuntimeError(error_msg)
+        if not final_video_url:
+            raise RuntimeError("EchoMimic completed without returning an output video URL.")
+
+        if job_id:
+            update_job(job_id, stage="Downloading EchoMimic output...", progress=92)
+
+        if not final_video_url.startswith("http"):
+            final_video_url = f"{EM_BASE}/{final_video_url.lstrip('/')}"
+
+        target_dir = output_dir or character.parent
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"echomimic_generated_{uuid.uuid4().hex[:6]}.mp4"
+        r_down = await client.get(
+            final_video_url,
+            headers={"Authorization": f"Bearer {settings.hf_token}"},
+            timeout=120
+        )
+        r_down.raise_for_status()
+        target.write_bytes(r_down.content)
+        return target
+
+
 async def generate_hf_liveportrait(
     video: Path,
     character: Path,
@@ -845,6 +1193,7 @@ async def process(
     job_id: str,
     video: Path | None = None,
     character: Path | None = None,
+    audio: Path | None = None,
     max_duration: int | float | str | None = "auto",
     resolution: str = "Low Res",
     video_remote_path: str | None = None,
@@ -1009,7 +1358,42 @@ async def process(
                     str(out_chunk_path)
                 )
             elif settings.mode == "hf_space":
-                if engine == "liveportrait":
+                if engine == "roop":
+                    gen_file = await generate_hf_roop(
+                        video=chunk_path,
+                        character=current_character,
+                        job_id=job_id,
+                        output_dir=output_dir
+                    )
+                elif engine == "sadtalker":
+                    chunk_audio = audio
+                    if not chunk_audio or not chunk_audio.exists():
+                        # Extract audio from chunk
+                        chunk_audio = output_dir / f"extracted_audio_{idx:03d}.mp3"
+                        run("ffmpeg", "-y", "-i", str(chunk_path), "-q:a", "0", "-map", "a", str(chunk_audio))
+                        if not chunk_audio.exists() or chunk_audio.stat().st_size == 0:
+                            raise RuntimeError("Could not extract audio from video and no separate audio file was provided.")
+                    gen_file = await generate_hf_sadtalker(
+                        character=current_character,
+                        audio=chunk_audio,
+                        job_id=job_id,
+                        output_dir=output_dir
+                    )
+                elif engine == "echomimic":
+                    chunk_audio = audio
+                    if not chunk_audio or not chunk_audio.exists():
+                        # Extract audio from chunk
+                        chunk_audio = output_dir / f"extracted_audio_{idx:03d}.mp3"
+                        run("ffmpeg", "-y", "-i", str(chunk_path), "-q:a", "0", "-map", "a", str(chunk_audio))
+                        if not chunk_audio.exists() or chunk_audio.stat().st_size == 0:
+                            raise RuntimeError("Could not extract audio from video and no separate audio file was provided.")
+                    gen_file = await generate_hf_echomimic(
+                        character=current_character,
+                        audio=chunk_audio,
+                        job_id=job_id,
+                        output_dir=output_dir
+                    )
+                elif engine == "liveportrait":
                     gen_file = await generate_hf_liveportrait(
                         video=chunk_path,
                         character=current_character,
@@ -1017,6 +1401,7 @@ async def process(
                         output_dir=output_dir
                     )
                 else:
+                    # Default: Wan2.2 Animate
                     gen_file = await generate_hf_wan_animate(
                         video=chunk_path,
                         character=current_character,
@@ -1105,6 +1490,7 @@ async def create_job(
     background: BackgroundTasks,
     video: UploadFile | None = File(None),
     character: UploadFile | None = File(None),
+    audio: UploadFile | None = File(None),
     video_remote_path: str | None = Form(None),
     char_remote_path: str | None = Form(None),
     max_duration: str = Form("auto"),
@@ -1124,13 +1510,16 @@ async def create_job(
         directory = Path(tempfile.gettempdir()) / "character_swap_jobs" / job_id
         directory.mkdir(parents=True, exist_ok=True)
         
-    vp, cp = None, None
+    vp, cp, ap = None, None, None
     if video and video.filename:
         vp = directory / f"source{Path(video.filename).suffix.lower()}"
         vp.write_bytes(await video.read())
     if character and character.filename:
         cp = directory / f"character{Path(character.filename).suffix.lower()}"
         cp.write_bytes(await character.read())
+    if audio and audio.filename:
+        ap = directory / f"audio{Path(audio.filename).suffix.lower()}"
+        ap.write_bytes(await audio.read())
     
     init_data = {
         "id": job_id,
@@ -1149,6 +1538,7 @@ async def create_job(
         job_id=job_id,
         video=vp,
         character=cp,
+        audio=ap,
         max_duration=max_duration,
         resolution=resolution,
         video_remote_path=video_remote_path,
