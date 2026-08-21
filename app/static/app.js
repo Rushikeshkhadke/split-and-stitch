@@ -230,9 +230,9 @@ async function pollJobStatus() {
     const stage = job.stage || 'Processing...';
     const progress = job.progress || 0;
 
-    let detail = 'Executing Wan2.2 Animate diffusion';
-    if (stage.includes('Uploading')) detail = 'Transferring media to Hugging Face ZeroGPU';
-    else if (stage.includes('Queuing')) detail = 'Waiting for ZeroGPU worker slot';
+    let detail = 'Executing AI model generation';
+    if (stage.includes('Uploading')) detail = 'Transferring media to AI inference server';
+    else if (stage.includes('Queuing')) detail = 'Waiting for worker slot in queue';
     else if (stage.includes('Downloading')) detail = 'Retrieving character-swapped video';
     else if (stage.includes('Restoring')) detail = 'Finalizing audio sync & encoding';
     else if (stage.includes('Stitching')) detail = 'Merging processed video chunks seamlessly';
@@ -291,7 +291,7 @@ $('retry-btn').addEventListener('click', async () => {
   const retryBtn = $('retry-btn');
   retryBtn.disabled = true;
   $('retry-wrap').hidden = true;
-  updateProgress(15, 'Resuming Generation...', 'Re-submitting failed chunk to Wan2.2 ZeroGPU');
+  updateProgress(15, 'Resuming Generation...', 'Re-submitting failed chunk to AI Model');
 
   try {
     const res = await fetch(`/api/jobs/${jobId}/retry`, { method: 'POST' });

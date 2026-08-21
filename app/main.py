@@ -771,110 +771,44 @@ async def generate_hf_sadtalker(
     output_dir: Path | None = None
 ) -> Path:
     """Animates a portrait image with speech audio using SadTalker (CPU, zero quota cost)."""
-    ST_BASE = "https://kevinwang676-sadtalker.hf.space"
-    timeout = httpx.Timeout(connect=60, read=600, write=120, pool=30)
+    if job_id:
+        update_job(job_id, stage="Uploading to SadTalker & Queuing...", progress=20)
+        
+    target_dir = output_dir or character.parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / f"sadtalker_generated_{uuid.uuid4().hex[:6]}.mp4"
+    
+    # We call our system Python script that uses gradio_client to handle the massive queue natively.
+    script_path = Path("scripts/sadtalker_bridge.py")
+    if not script_path.exists():
+        raise RuntimeError(f"Missing {script_path} for SadTalker")
+        
+    # The system python has gradio_client installed
+    sys_python = r"C:\Users\khadk\AppData\Local\Python\pythoncore-3.14-64\python.exe"
+    
+    if job_id:
+        update_job(job_id, stage="SadTalker is processing (can take a very long time in queue)...", progress=35)
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        if job_id:
-            update_job(job_id, stage="Uploading portrait to SadTalker...", progress=20)
-
-        with open(character, "rb") as f:
-            mime = "image/png" if character.suffix.lower() == ".png" else "image/jpeg"
-            r1 = await client.post(f"{ST_BASE}/upload", files={"files": (character.name, f, mime)})
-            r1.raise_for_status()
-            char_remote = r1.json()[0]
-
-        with open(audio, "rb") as f:
-            audio_mime = "audio/mpeg" if audio.suffix.lower() == ".mp3" else "audio/wav"
-            r2 = await client.post(f"{ST_BASE}/upload", files={"files": (audio.name, f, audio_mime)})
-            r2.raise_for_status()
-            audio_remote = r2.json()[0]
-
-        if job_id:
-            update_job(job_id, stage="SadTalker generating talking head...", progress=40)
-
-        # SadTalker main generate endpoint: image, audio, preprocess, still_mode, use_enhancer, batch_size, size, pose_style, exp_scale
-        payload = {
-            "data": [
-                {"path": char_remote, "meta": {"_type": "gradio.FileData"}},
-                {"path": audio_remote, "meta": {"_type": "gradio.FileData"}},
-                "crop",     # preprocess
-                False,      # still mode
-                True,       # use_enhancer (GFPGAN)
-                2,          # batch_size
-                256,        # face model resolution
-                0,          # pose_style
-                1.0,        # expression_scale
-                False,      # use_ref_video
-                None,       # ref_video
-                "pose",     # ref_info
-                False,      # use_idle_mode
-                None,       # length_of_video
-                True,       # use_blink
-                "png"       # result_format
-            ]
-        }
-        r_call = await client.post(f"{ST_BASE}/call/test", json=payload)
-        r_call.raise_for_status()
-        event_id = r_call.json().get("event_id")
-        if not event_id:
-            raise RuntimeError(f"SadTalker returned no event_id: {r_call.text}")
-
-        if job_id:
-            update_job(job_id, stage="SadTalker animating face...", progress=55)
-
-        final_video_url = None
-        error_msg = None
-
-        async with client.stream("GET", f"{ST_BASE}/call/test/{event_id}", timeout=600) as stream:
-            async for line in stream.aiter_lines():
-                if not line:
-                    continue
-                if line.startswith("event: heartbeat"):
-                    if job_id:
-                        cur = read_job(job_id) or {}
-                        update_job(job_id, stage="SadTalker rendering...", progress=min(90, cur.get("progress", 55) + 3))
-                elif line.startswith("data:"):
-                    raw = line[5:].strip()
-                    if not raw or raw == "null":
-                        continue
-                    try:
-                        data = json.loads(raw)
-                        if isinstance(data, dict) and "error" in data:
-                            error_msg = str(data.get("error") or "SadTalker error")
-                            break
-                        if isinstance(data, list) and len(data) >= 1:
-                            for item in data:
-                                if isinstance(item, dict):
-                                    url = item.get("url") or item.get("path")
-                                    if url:
-                                        final_video_url = url
-                                        break
-                                elif isinstance(item, str) and item:
-                                    final_video_url = item
-                                    break
-                            break
-                    except Exception:
-                        pass
-
-        if error_msg:
-            raise RuntimeError(error_msg)
-        if not final_video_url:
-            raise RuntimeError("SadTalker completed without returning an output video URL.")
-
-        if job_id:
-            update_job(job_id, stage="Downloading SadTalker output...", progress=92)
-
-        if not final_video_url.startswith("http"):
-            final_video_url = f"{ST_BASE}/{final_video_url.lstrip('/')}"
-
-        target_dir = output_dir or character.parent
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / f"sadtalker_generated_{uuid.uuid4().hex[:6]}.mp4"
-        r_down = await client.get(final_video_url, timeout=120)
-        r_down.raise_for_status()
-        target.write_bytes(r_down.content)
-        return target
+    import subprocess
+    proc = await asyncio.create_subprocess_exec(
+        sys_python, str(script_path), str(character), str(audio), str(target),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    
+    # We could read output here incrementally if needed, but we just wait
+    stdout, stderr = await proc.communicate()
+    
+    if proc.returncode != 0:
+        raise RuntimeError(f"SadTalker Generation Failed:\n{stderr.decode(errors='replace')}\n{stdout.decode(errors='replace')}")
+        
+    if not target.exists():
+        raise RuntimeError("SadTalker script completed but no video was saved.")
+        
+    if job_id:
+        update_job(job_id, stage="SadTalker generation complete!", progress=92)
+        
+    return target
 
 
 async def generate_hf_echomimic(
@@ -1371,9 +1305,12 @@ async def process(
                     if not chunk_audio or not chunk_audio.exists():
                         # Extract audio from chunk
                         chunk_audio = output_dir / f"extracted_audio_{idx:03d}.mp3"
-                        run("ffmpeg", "-y", "-i", str(chunk_path), "-q:a", "0", "-map", "a", str(chunk_audio))
+                        try:
+                            run("ffmpeg", "-y", "-i", str(chunk_path), "-q:a", "0", "-map", "a", str(chunk_audio))
+                        except Exception:
+                            pass
                         if not chunk_audio.exists() or chunk_audio.stat().st_size == 0:
-                            raise RuntimeError("Could not extract audio from video and no separate audio file was provided.")
+                            raise RuntimeError("This video has no audio track, but SadTalker requires audio. Please provide a video with sound or upload a separate audio file.")
                     gen_file = await generate_hf_sadtalker(
                         character=current_character,
                         audio=chunk_audio,
@@ -1385,9 +1322,12 @@ async def process(
                     if not chunk_audio or not chunk_audio.exists():
                         # Extract audio from chunk
                         chunk_audio = output_dir / f"extracted_audio_{idx:03d}.mp3"
-                        run("ffmpeg", "-y", "-i", str(chunk_path), "-q:a", "0", "-map", "a", str(chunk_audio))
+                        try:
+                            run("ffmpeg", "-y", "-i", str(chunk_path), "-q:a", "0", "-map", "a", str(chunk_audio))
+                        except Exception:
+                            pass
                         if not chunk_audio.exists() or chunk_audio.stat().st_size == 0:
-                            raise RuntimeError("Could not extract audio from video and no separate audio file was provided.")
+                            raise RuntimeError("This video has no audio track, but EchoMimic requires audio. Please provide a video with sound or upload a separate audio file.")
                     gen_file = await generate_hf_echomimic(
                         character=current_character,
                         audio=chunk_audio,
