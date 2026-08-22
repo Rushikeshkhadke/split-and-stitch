@@ -564,8 +564,7 @@ async def generate_hf_wan_animate(
             max_duration,
             {"path": char_remote_path, "meta": {"_type": "gradio.FileData"}},
             "Character Swap",
-            resolution,
-            None
+            resolution
         ]
     }
     
