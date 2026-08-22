@@ -857,7 +857,7 @@ async def generate_hf_echomimic(
                 512,    # width
                 512,    # height
                 120,    # length (frames)
-                -1,     # seed (-1 = random)
+                0,      # seed (0 = random or static depending on UI, but prevents <0 error)
                 0.5,    # facemask_dilation_ratio
                 1.5,    # facecrop_dilation_ratio
                 12,     # context_frames
