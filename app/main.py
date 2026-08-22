@@ -683,99 +683,41 @@ async def generate_hf_roop(
     output_dir: Path | None = None
 ) -> Path:
     """Face-swaps character into video using tonyassi/video-face-swap (CPU-based, no quota cost)."""
-    ROOP_BASE = "https://tonyassi-video-face-swap.hf.space"
-    timeout = httpx.Timeout(connect=60, read=600, write=120, pool=30)
+    if job_id:
+        update_job(job_id, stage="Initializing Roop Face Swap...", progress=20)
+        
+    def _run_roop():
+        from gradio_client import Client, handle_file
+        # Gradio client handles polling, uploads, and SSE formatting automatically
+        client = Client("tonyassi/video-face-swap")
+        result = client.predict(
+            input_image=handle_file(str(character.resolve())),
+            input_video=handle_file(str(video.resolve())),
+            gender="all",
+            api_name="/generate"
+        )
+        return result
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    try:
         if job_id:
-            update_job(job_id, stage="Uploading to Roop Face Swap...", progress=20)
-
-        # Upload source face (character image)
-        with open(character, "rb") as f:
-            mime = "image/png" if character.suffix.lower() == ".png" else "image/jpeg"
-            r1 = await client.post(f"{ROOP_BASE}/gradio_api/upload", files={"files": (character.name, f, mime)})
-            r1.raise_for_status()
-            char_remote = r1.json()[0]
-
-        # Upload target video
-        with open(video, "rb") as f:
-            r2 = await client.post(f"{ROOP_BASE}/gradio_api/upload", files={"files": (video.name, f, "video/mp4")})
-            r2.raise_for_status()
-            vid_remote = r2.json()[0]
-
+            update_job(job_id, stage="Roop processing face swap (CPU: may take several mins)...", progress=50)
+            
+        result_path = await asyncio.to_thread(_run_roop)
+        
+        if not result_path or not Path(result_path).exists():
+            raise RuntimeError("Roop returned empty or missing output.")
+            
         if job_id:
-            update_job(job_id, stage="Roop processing face swap...", progress=40)
-
-        # Call generate endpoint: inputs [source_image, target_video, gender]
-        payload = {
-            "data": [
-                {"path": char_remote, "meta": {"_type": "gradio.FileData"}},
-                {"video": {"path": vid_remote, "meta": {"_type": "gradio.FileData"}}},
-                "all"
-            ]
-        }
-        r_call = await client.post(f"{ROOP_BASE}/gradio_api/call/generate", json=payload)
-        r_call.raise_for_status()
-        event_id = r_call.json().get("event_id")
-        if not event_id:
-            raise RuntimeError(f"Roop returned no event_id: {r_call.text}")
-
-        if job_id:
-            update_job(job_id, stage="Roop generating swapped video...", progress=55)
-
-        final_video_url = None
-        error_msg = None
-        sse_url = f"{ROOP_BASE}/gradio_api/call/generate/{event_id}"
-
-        async with client.stream("GET", sse_url, timeout=600) as stream:
-            async for line in stream.aiter_lines():
-                if not line:
-                    continue
-                if line.startswith("event: heartbeat"):
-                    if job_id:
-                        cur = read_job(job_id) or {}
-                        update_job(job_id, stage="Roop swapping faces...", progress=min(90, cur.get("progress", 55) + 3))
-                elif line.startswith("data:"):
-                    raw = line[5:].strip()
-                    if not raw or raw == "null":
-                        continue
-                    try:
-                        data = json.loads(raw)
-                        if isinstance(data, dict) and "error" in data:
-                            error_msg = str(data.get("error") or "Roop error")
-                            break
-                        if isinstance(data, list) and len(data) >= 1:
-                            for item in data:
-                                if isinstance(item, dict):
-                                    url = item.get("url") or item.get("path")
-                                    if url:
-                                        final_video_url = url
-                                        break
-                                elif isinstance(item, str) and item:
-                                    final_video_url = item
-                                    break
-                            break
-                    except Exception:
-                        pass
-
-        if error_msg:
-            raise RuntimeError(error_msg)
-        if not final_video_url:
-            raise RuntimeError("Roop completed without returning an output video URL.")
-
-        if job_id:
-            update_job(job_id, stage="Downloading Roop output...", progress=92)
-
-        if not final_video_url.startswith("http"):
-            final_video_url = f"{ROOP_BASE}/{final_video_url.lstrip('/')}"
-
+            update_job(job_id, stage="Downloading Roop output...", progress=90)
+            
         target_dir = output_dir or video.parent
         target_dir.mkdir(parents=True, exist_ok=True)
         target = target_dir / f"roop_generated_{uuid.uuid4().hex[:6]}.mp4"
-        r_down = await client.get(final_video_url, timeout=120)
-        r_down.raise_for_status()
-        target.write_bytes(r_down.content)
+        shutil.copy2(result_path, target)
         return target
+        
+    except Exception as e:
+        raise RuntimeError(f"Roop Error: {e}")
 
 
 async def generate_hf_sadtalker(
