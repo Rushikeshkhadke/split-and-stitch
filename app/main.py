@@ -536,143 +536,65 @@ async def generate_hf_wan_animate(
     max_duration: float = 2.0,
     resolution: str = "Low Res",
     job_id: str | None = None,
-    video_remote_path: str | None = None,
-    char_remote_path: str | None = None,
+    video_remote_path: str | None = None, # Left for compat but unused
+    char_remote_path: str | None = None, # Left for compat but unused
     output_dir: Path | None = None
 ) -> Path:
-    """Submits generation to alexnasa/Wan2.2-Animate-ZEROGPU Space and downloads the output MP4."""
-    if not video_remote_path and video:
-        if job_id:
-            update_job(job_id, stage="Uploading video to Wan2.2 ZeroGPU...", progress=15)
-        video_remote_path = await hf_upload_file(video, "video/mp4")
-        
-    if not char_remote_path and character:
-        if job_id:
-            update_job(job_id, stage="Uploading character to Wan2.2 ZeroGPU...", progress=25)
-        # Detect mime type correctly from extension
-        char_ext = character.suffix.lower()
-        char_mime = "image/jpeg" if char_ext in (".jpg", ".jpeg") else ("image/webp" if char_ext == ".webp" else "image/png")
-        char_remote_path = await hf_upload_file(character, char_mime)
-        
-    if not video_remote_path or not char_remote_path:
-        raise RuntimeError("Missing remote media paths for Wan2.2 Animate generation.")
-    
-    if job_id:
-        update_job(job_id, stage="Queuing Wan2.2 Animate task...", progress=30)
-        
-    # 2. Call animate_scene endpoint with automatic queue retry
-    payload = {
-        "data": [
-            {"path": video_remote_path, "meta": {"_type": "gradio.FileData"}},
-            max_duration,
-            {"path": char_remote_path, "meta": {"_type": "gradio.FileData"}},
-            "Character Swap",
-            resolution,
-            None
-        ]
-    }
-    
-    timeout = httpx.Timeout(connect=30, read=300, write=300, pool=30)
-    max_queue_retries = 3
-    
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        for attempt in range(1, max_queue_retries + 1):
-            if job_id:
-                stage_msg = "Queuing Wan2.2 Animate task..." if attempt == 1 else f"ZeroGPU busy. Retrying queue ({attempt}/{max_queue_retries})..."
-                update_job(job_id, stage=stage_msg, progress=30)
-                
-            r_call = await client.post(hf_url("/gradio_api/call/animate_scene"), json=payload, headers=hf_headers())
-            r_call.raise_for_status()
-            event_id = r_call.json().get("event_id")
-            if not event_id:
-                raise RuntimeError(f"No event_id returned from Space: {r_call.text}")
-                
-            if job_id:
-                update_job(job_id, stage="Processing with Wan2.2 ZeroGPU...", progress=50)
-                
-            # 3. Stream SSE status
-            sse_url = hf_url(f"/gradio_api/call/animate_scene/{event_id}")
-            final_video_url = None
-            error_msg = None
-            
-            async with client.stream("GET", sse_url, headers=hf_headers(), timeout=600) as stream:
-                last_event = None
-                async for line in stream.aiter_lines():
-                    if not line:
-                        continue
-                    if line.startswith("event:"):
-                        last_event = line.split(":", 1)[1].strip()
-                        if last_event == "heartbeat" and job_id:
-                            current = read_job(job_id) or {}
-                            current_p = min(90, current.get("progress", 50) + 5)
-                            update_job(job_id, stage="Generating character-swapped frames...", progress=current_p)
-                    elif line.startswith("data:"):
-                        raw_data = line[5:].strip()
-                        if not raw_data or raw_data == "null":
-                            continue
-                        try:
-                            data = json.loads(raw_data)
-                            if last_event == "error" or (isinstance(data, dict) and bool(data.get("error") or data.get("message"))):
-                                error_val = data.get("error") or data.get("message") or "Unknown Gradio Error"
-                                if isinstance(error_val, str) and error_val:
-                                    error_msg = error_val
-                                    break
-                            if isinstance(data, list) and len(data) >= 1:
-                                # Completed! Extract output index 0
-                                out_item = data[0]
-                                if isinstance(out_item, str):
-                                    final_video_url = out_item
-                                elif isinstance(out_item, dict):
-                                    final_video_url = out_item.get("url") or out_item.get("path")
-                                    if not final_video_url and "video" in out_item:
-                                        if isinstance(out_item["video"], dict):
-                                            final_video_url = out_item["video"].get("url") or out_item["video"].get("path")
-                                        elif isinstance(out_item["video"], str):
-                                            final_video_url = out_item["video"]
-                                break
-                        except Exception:
-                            pass
-                            
-            if error_msg:
-                # If quota exhausted or overloaded, retry with backoff
-                if attempt < max_queue_retries:
-                    wait_secs = 10 * attempt
-                    if job_id:
-                        update_job(job_id, stage=f"Wan2.2 ZeroGPU busy, retrying in {wait_secs}s ({attempt}/{max_queue_retries})...", progress=30)
-                    await asyncio.sleep(wait_secs)
-                    continue
-                raise RuntimeError(
-                    f"Wan2.2 ZeroGPU rejected the request after {max_queue_retries} attempts. "
-                    f"This usually means the daily ZeroGPU quota is exhausted. "
-                    f"Please try again tomorrow, or switch to the 'Roop Face Swap' engine which uses free CPU with no quota limits."
-                )
-                
-            if not final_video_url:
-                if attempt < max_queue_retries:
-                    await asyncio.sleep(3)
-                    continue
-                raise RuntimeError("Wan2.2 ZeroGPU generation completed without returning an output video URL. The space might be temporarily failing to process your video format.")
-                
-            if job_id:
-                update_job(job_id, stage="Downloading final video from Wan2.2...", progress=92)
-                
-            # Normalize download URL
-            if final_video_url and not final_video_url.startswith("http"):
-                if "/gradio_api/file=" in final_video_url or "/file=" in final_video_url:
-                    final_video_url = hf_url(f"/{final_video_url.lstrip('/')}")
-                else:
-                    final_video_url = hf_url(f"/gradio_api/file={final_video_url}")
+    """Submits generation to alexnasa/Wan2.2-Animate-ZEROGPU Space and downloads the output MP4 using gradio_client."""
+    if not video or not character:
+        raise ValueError("Video and character paths are required.")
 
-            # 4. Download output video
-            target_dir = output_dir or (video.parent if video else Path(tempfile.gettempdir()))
-            target_dir.mkdir(parents=True, exist_ok=True)
-            target = target_dir / f"hf_generated_{uuid.uuid4().hex[:6]}.mp4"
-            r_down = await client.get(final_video_url, headers=hf_headers(), timeout=120)
-            r_down.raise_for_status()
-            target.write_bytes(r_down.content)
-            return target
+    if job_id:
+        update_job(job_id, stage="Initializing Wan2.2 ZeroGPU Client...", progress=15)
+        
+    def _run_wan():
+        from gradio_client import Client, handle_file
+        # Initialize client with token to use Pro quota if available
+        token = settings.hf_token
+        client = Client("alexnasa/Wan2.2-Animate-ZEROGPU", token=token)
+        
+        # predict signature: input_video, max_duration_s, edited_frame, rc_str, resolution_choice
+        result = client.predict(
+            input_video=handle_file(str(video.resolve())),
+            max_duration_s=float(max_duration),
+            edited_frame=handle_file(str(character.resolve())),
+            rc_str="Character Swap",
+            resolution_choice=resolution,
+            api_name="/animate_scene"
+        )
+        return result
+
+    try:
+        if job_id:
+            update_job(job_id, stage="Wan2.2 ZeroGPU processing (takes ~30-60s)...", progress=50)
             
-        raise RuntimeError("No GPU was available after multiple retries. Please try again or authenticate with a Hugging Face token.")
+        result_tuple = await asyncio.to_thread(_run_wan)
+        
+        # The space returns a tuple of 5 outputs: (edited_video, pose_video, background_video, mask_video, face_video)
+        # We only want the first one (edited_video)
+        if not result_tuple or not isinstance(result_tuple, (tuple, list)) or not result_tuple[0]:
+            raise RuntimeError("Wan2.2 returned empty output.")
+            
+        result_path = result_tuple[0]
+        
+        if job_id:
+            update_job(job_id, stage="Downloading Wan2.2 output...", progress=90)
+            
+        target_dir = output_dir or video.parent
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"wan_generated_{uuid.uuid4().hex[:6]}.mp4"
+        import shutil
+        shutil.copy2(result_path, target)
+        return target
+        
+    except Exception as e:
+        err_str = str(e)
+        if "raised an exception but has not enabled verbose" in err_str or "ZeroGPU" in err_str:
+            raise RuntimeError(
+                "Wan2.2 ZeroGPU rejected the request. This usually means the daily ZeroGPU quota is exhausted. "
+                "Please try again tomorrow, or switch to the 'Roop Face Swap' engine which uses free CPU with no quota limits."
+            )
+        raise RuntimeError(f"Wan2.2 Error: {err_str}")
 
 
 
