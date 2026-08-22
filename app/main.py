@@ -1171,16 +1171,20 @@ async def process(
                         output_dir=output_dir
                     )
                 elif engine == "sadtalker":
-                    chunk_audio = audio
-                    if not chunk_audio or not chunk_audio.exists():
-                        # Extract audio from chunk
-                        chunk_audio = output_dir / f"extracted_audio_{idx:03d}.mp3"
-                        try:
-                            run("ffmpeg", "-y", "-i", str(chunk_path), "-q:a", "0", "-map", "a", str(chunk_audio))
-                        except Exception:
-                            pass
-                        if not chunk_audio.exists() or chunk_audio.stat().st_size == 0:
-                            raise RuntimeError("This video has no audio track, but SadTalker requires audio. Please provide a video with sound or upload a separate audio file.")
+                    # Always slice audio for the chunk from the original source to ensure sync
+                    # (chunk_path has no audio because it was stripped with -an)
+                    chunk_audio = output_dir / f"extracted_audio_{idx:03d}.mp3"
+                    start_t = chunk_info.get("start", (idx - 1) * 10.0)
+                    audio_source = audio if (audio and audio.exists()) else video
+                    
+                    try:
+                        run("ffmpeg", "-y", "-ss", f"{start_t:.6f}", "-i", str(audio_source), "-t", f"{chunk_dur:.6f}", "-q:a", "0", "-map", "a", str(chunk_audio))
+                    except Exception:
+                        pass
+                        
+                    if not chunk_audio.exists() or chunk_audio.stat().st_size == 0:
+                        raise RuntimeError("This video has no audio track, but SadTalker requires audio. Please provide a video with sound or upload a separate audio file.")
+                        
                     gen_file = await generate_hf_sadtalker(
                         character=current_character,
                         audio=chunk_audio,
@@ -1188,16 +1192,19 @@ async def process(
                         output_dir=output_dir
                     )
                 elif engine == "echomimic":
-                    chunk_audio = audio
-                    if not chunk_audio or not chunk_audio.exists():
-                        # Extract audio from chunk
-                        chunk_audio = output_dir / f"extracted_audio_{idx:03d}.mp3"
-                        try:
-                            run("ffmpeg", "-y", "-i", str(chunk_path), "-q:a", "0", "-map", "a", str(chunk_audio))
-                        except Exception:
-                            pass
-                        if not chunk_audio.exists() or chunk_audio.stat().st_size == 0:
-                            raise RuntimeError("This video has no audio track, but EchoMimic requires audio. Please provide a video with sound or upload a separate audio file.")
+                    # Always slice audio for the chunk from the original source to ensure sync
+                    chunk_audio = output_dir / f"extracted_audio_{idx:03d}.mp3"
+                    start_t = chunk_info.get("start", (idx - 1) * 10.0)
+                    audio_source = audio if (audio and audio.exists()) else video
+                    
+                    try:
+                        run("ffmpeg", "-y", "-ss", f"{start_t:.6f}", "-i", str(audio_source), "-t", f"{chunk_dur:.6f}", "-q:a", "0", "-map", "a", str(chunk_audio))
+                    except Exception:
+                        pass
+                        
+                    if not chunk_audio.exists() or chunk_audio.stat().st_size == 0:
+                        raise RuntimeError("This video has no audio track, but EchoMimic requires audio. Please provide a video with sound or upload a separate audio file.")
+                        
                     gen_file = await generate_hf_echomimic(
                         character=current_character,
                         audio=chunk_audio,
