@@ -814,12 +814,16 @@ async def generate_hf_sadtalker(
 async def generate_hf_echomimic(
     character: Path,
     audio: Path,
+    max_duration: float = 5.0,
     job_id: str | None = None,
     output_dir: Path | None = None
 ) -> Path:
     """Audio-driven lip-sync portrait animation using EchoMimic (ZeroGPU A10G)."""
     EM_BASE = "https://fffiloni-echomimic.hf.space"
     timeout = httpx.Timeout(connect=30, read=600, write=120, pool=30)
+
+    # Calculate exactly how many frames EchoMimic needs to generate for this audio chunk (24 fps)
+    target_frames = max(24, int(max_duration * 24))
 
     async with httpx.AsyncClient(timeout=timeout) as client:
         if job_id:
@@ -856,7 +860,7 @@ async def generate_hf_echomimic(
                 {"path": audio_remote, "meta": {"_type": "gradio.FileData"}},
                 512,    # width
                 512,    # height
-                120,    # length (frames)
+                target_frames,  # length (frames) dynamic!
                 0,      # seed (0 = random or static depending on UI, but prevents <0 error)
                 0.5,    # facemask_dilation_ratio
                 1.5,    # facecrop_dilation_ratio
@@ -1331,6 +1335,7 @@ async def process(
                     gen_file = await generate_hf_echomimic(
                         character=current_character,
                         audio=chunk_audio,
+                        max_duration=chunk_target_dur,
                         job_id=job_id,
                         output_dir=output_dir
                     )
@@ -1357,6 +1362,19 @@ async def process(
                 frame_count = max(1, round(chunk_dur * fps))
                 gen_file = await generate_segment(chunk_path, current_character, f"swap_{job_id}_{idx:03d}", frame_count)
                 shutil.copy2(gen_file, out_chunk_path)
+
+            # --- DYNAMIC FRAME PASSING (SEAMLESS CUTS) ---
+            # Extract the exact last frame of the generated chunk to use as the character reference for the NEXT chunk.
+            # This completely eliminates the "snap to neutral" glitch and makes the cut invisible.
+            if idx < total_chunks:
+                next_char_path = output_dir / f"anchor_char_{idx:03d}.jpg"
+                try:
+                    # '-vf reverse' is a bulletproof way to grab the exact last frame of a short video
+                    run("ffmpeg", "-y", "-i", str(out_chunk_path), "-vf", "reverse", "-vframes", "1", "-q:v", "2", str(next_char_path))
+                    if next_char_path.exists() and next_char_path.stat().st_size > 0:
+                        current_character = next_char_path
+                except Exception as e:
+                    print(f"Warning: Failed to extract last frame for seamless transition: {e}")
 
             chunk_outputs = [c for c in chunk_outputs if c["index"] != idx]
             chunk_outputs.append({
