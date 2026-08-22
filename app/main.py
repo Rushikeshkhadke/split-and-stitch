@@ -634,11 +634,18 @@ async def generate_hf_wan_animate(
                             pass
                             
             if error_msg:
-                # If GPU queue was full, retry automatically after brief backoff
-                if "No GPU was available" in error_msg and attempt < max_queue_retries:
-                    await asyncio.sleep(4)
+                # If quota exhausted or overloaded, retry with backoff
+                if attempt < max_queue_retries:
+                    wait_secs = 10 * attempt
+                    if job_id:
+                        update_job(job_id, stage=f"Wan2.2 ZeroGPU busy, retrying in {wait_secs}s ({attempt}/{max_queue_retries})...", progress=30)
+                    await asyncio.sleep(wait_secs)
                     continue
-                raise RuntimeError(f"Wan2.2 Error: {error_msg}")
+                raise RuntimeError(
+                    f"Wan2.2 ZeroGPU rejected the request after {max_queue_retries} attempts. "
+                    f"This usually means the daily ZeroGPU quota is exhausted. "
+                    f"Please try again tomorrow, or switch to the 'Roop Face Swap' engine which uses free CPU with no quota limits."
+                )
                 
             if not final_video_url:
                 if attempt < max_queue_retries:
