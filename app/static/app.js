@@ -244,7 +244,14 @@ async function pollJobStatus() {
       clearInterval(pollInterval);
       const rawError = job.error || 'Unknown error occurred';
       const cleanError = rawError.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').trim();
-      updateProgress(0, 'Generation Failed', cleanError, job);
+      // Show failure state without resetting progress bar to 0 (would be confusing)
+      $('stage-label').textContent = 'Generation Failed';
+      $('stage-detail').textContent = cleanError;
+      if (job.total_chunks && job.total_chunks > 1) {
+        const chunkBadge = $('chunk-badge');
+        chunkBadge.hidden = false;
+        chunkBadge.textContent = `CHUNK ${job.current_chunk || 1} / ${job.total_chunks}`;
+      }
       $('start-btn').disabled = false;
       $('retry-wrap').hidden = false;
     } else {

@@ -533,7 +533,7 @@ async def hf_upload_file(path: Path, mime_type: str) -> str:
 async def generate_hf_wan_animate(
     video: Path | None = None,
     character: Path | None = None,
-    max_duration: int = 2,
+    max_duration: float = 2.0,
     resolution: str = "Low Res",
     job_id: str | None = None,
     video_remote_path: str | None = None,
@@ -549,7 +549,10 @@ async def generate_hf_wan_animate(
     if not char_remote_path and character:
         if job_id:
             update_job(job_id, stage="Uploading character to Wan2.2 ZeroGPU...", progress=25)
-        char_remote_path = await hf_upload_file(character, "image/png")
+        # Detect mime type correctly from extension
+        char_ext = character.suffix.lower()
+        char_mime = "image/jpeg" if char_ext in (".jpg", ".jpeg") else ("image/webp" if char_ext == ".webp" else "image/png")
+        char_remote_path = await hf_upload_file(character, char_mime)
         
     if not video_remote_path or not char_remote_path:
         raise RuntimeError("Missing remote media paths for Wan2.2 Animate generation.")
@@ -564,7 +567,8 @@ async def generate_hf_wan_animate(
             max_duration,
             {"path": char_remote_path, "meta": {"_type": "gradio.FileData"}},
             "Character Swap",
-            resolution
+            resolution,
+            None
         ]
     }
     
@@ -592,11 +596,13 @@ async def generate_hf_wan_animate(
             error_msg = None
             
             async with client.stream("GET", sse_url, headers=hf_headers(), timeout=600) as stream:
+                last_event = None
                 async for line in stream.aiter_lines():
                     if not line:
                         continue
-                    if line.startswith("event: heartbeat"):
-                        if job_id:
+                    if line.startswith("event:"):
+                        last_event = line.split(":", 1)[1].strip()
+                        if last_event == "heartbeat" and job_id:
                             current = read_job(job_id) or {}
                             current_p = min(90, current.get("progress", 50) + 5)
                             update_job(job_id, stage="Generating character-swapped frames...", progress=current_p)
@@ -606,9 +612,11 @@ async def generate_hf_wan_animate(
                             continue
                         try:
                             data = json.loads(raw_data)
-                            if isinstance(data, dict) and "error" in data:
-                                error_msg = data.get("error")
-                                break
+                            if last_event == "error" or (isinstance(data, dict) and bool(data.get("error") or data.get("message"))):
+                                error_val = data.get("error") or data.get("message") or "Unknown Gradio Error"
+                                if isinstance(error_val, str) and error_val:
+                                    error_msg = error_val
+                                    break
                             if isinstance(data, list) and len(data) >= 1:
                                 # Completed! Extract output index 0
                                 out_item = data[0]
@@ -630,13 +638,13 @@ async def generate_hf_wan_animate(
                 if "No GPU was available" in error_msg and attempt < max_queue_retries:
                     await asyncio.sleep(4)
                     continue
-                raise RuntimeError(error_msg)
+                raise RuntimeError(f"Wan2.2 Error: {error_msg}")
                 
             if not final_video_url:
                 if attempt < max_queue_retries:
                     await asyncio.sleep(3)
                     continue
-                raise RuntimeError("Wan2.2 ZeroGPU generation completed without returning an output video URL.")
+                raise RuntimeError("Wan2.2 ZeroGPU generation completed without returning an output video URL. The space might be temporarily failing to process your video format.")
                 
             if job_id:
                 update_job(job_id, stage="Downloading final video from Wan2.2...", progress=92)
@@ -782,8 +790,9 @@ async def generate_hf_sadtalker(
     if not script_path.exists():
         raise RuntimeError(f"Missing {script_path} for SadTalker")
         
-    # The system python has gradio_client installed
-    sys_python = r"C:\Users\khadk\AppData\Local\Python\pythoncore-3.14-64\python.exe"
+    # Use the same Python executable that is running the server — avoids hardcoded paths
+    import sys
+    sys_python = sys.executable
     
     if job_id:
         update_job(job_id, stage="SadTalker is processing (can take a very long time in queue)...", progress=35)
@@ -1261,26 +1270,13 @@ async def process(
             # Max duration for this chunk (capped at 10)
             chunk_target_dur = min(10, max(1, math.ceil(chunk_dur)))
 
-            # Multi-Chunk Consistency Chaining:
-            # Use the ending frame of the previous chunk as the reference so lighting, pose, and clothing lock in seamlessly
+            # Dynamic character reference: start from base character image.
+            # If we successfully extracted a last-frame anchor from the previous chunk, use it.
+            # (Populated at the end of each loop iteration via anchor_char logic below)
             current_character = character
-            if idx > 1:
-                prev_out = output_dir / f"output_chunk_{idx-1:03d}.mp4"
-                if prev_out.exists():
-                    chained_frame = output_dir / f"handoff_frame_{idx-1:03d}.png"
-                    try:
-                        run(
-                            "ffmpeg", "-y",
-                            "-sseof", "-0.1",
-                            "-i", str(prev_out),
-                            "-vframes", "1",
-                            "-q:v", "1",
-                            str(chained_frame)
-                        )
-                        if chained_frame.exists() and chained_frame.stat().st_size > 1000:
-                            current_character = chained_frame
-                    except Exception:
-                        current_character = character
+            anchor_frame = output_dir / f"anchor_char_{idx-1:03d}.jpg"
+            if idx > 1 and anchor_frame.exists() and anchor_frame.stat().st_size > 1000:
+                current_character = anchor_frame
 
             if settings.mode == "mock":
                 await asyncio.sleep(0.4)
@@ -1364,16 +1360,22 @@ async def process(
 
             # --- DYNAMIC FRAME PASSING (SEAMLESS CUTS) ---
             # Extract the exact last frame of the generated chunk to use as the character reference for the NEXT chunk.
-            # This completely eliminates the "snap to neutral" glitch and makes the cut invisible.
+            # -sseof -0.1 seeks to 100ms before EOF — very fast, no full-video decode needed.
             if idx < total_chunks:
                 next_char_path = output_dir / f"anchor_char_{idx:03d}.jpg"
                 try:
-                    # '-vf reverse' is a bulletproof way to grab the exact last frame of a short video
-                    run("ffmpeg", "-y", "-i", str(out_chunk_path), "-vf", "reverse", "-vframes", "1", "-q:v", "2", str(next_char_path))
-                    if next_char_path.exists() and next_char_path.stat().st_size > 0:
-                        current_character = next_char_path
+                    run(
+                        "ffmpeg", "-y",
+                        "-sseof", "-0.1",
+                        "-i", str(out_chunk_path),
+                        "-vframes", "1",
+                        "-q:v", "2",
+                        str(next_char_path)
+                    )
+                    if not (next_char_path.exists() and next_char_path.stat().st_size > 0):
+                        next_char_path.unlink(missing_ok=True)
                 except Exception as e:
-                    print(f"Warning: Failed to extract last frame for seamless transition: {e}")
+                    print(f"Warning: Could not extract last frame for seamless transition: {e}", flush=True)
 
             chunk_outputs = [c for c in chunk_outputs if c["index"] != idx]
             chunk_outputs.append({
