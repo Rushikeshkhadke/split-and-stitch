@@ -4,19 +4,19 @@ from gradio_client import Client, handle_file
 
 def run_sadtalker(image_path, audio_path, output_path):
     print("Initializing Gradio Client for SadTalker...")
-    client = Client("kevinwang676/SadTalker")
+    client = Client("kevinwang676/sadtalker")
     
     print("Calling SadTalker prediction API...")
     result = client.predict(
-        source_image=handle_file(image_path),
-        driven_audio=handle_file(audio_path),
-        preprocess="crop",
-        still_mode=False,
-        enhancer=True,
-        batch_size=1,
-        size="256",
-        pose_style=0,
-        api_name="/predict"
+        handle_file(image_path),
+        handle_file(audio_path),
+        "crop",
+        False,
+        True,
+        1,
+        "256",
+        0,
+        fn_index=0
     )
     
     print(f"Prediction complete. Result: {result}")
@@ -24,10 +24,12 @@ def run_sadtalker(image_path, audio_path, output_path):
     out_file = None
     if isinstance(result, str):
         out_file = result
-    elif isinstance(result, dict) and "video" in result:
-        out_file = result["video"]
+    elif isinstance(result, dict):
+        out_file = result.get("video") or result.get("path")
     elif isinstance(result, list) and len(result) > 0:
         out_file = result[0]
+        if isinstance(out_file, dict):
+            out_file = out_file.get("video") or out_file.get("path")
         
     if out_file:
         shutil.copy2(out_file, output_path)
@@ -43,3 +45,4 @@ if __name__ == "__main__":
     aud = sys.argv[2]
     out = sys.argv[3]
     run_sadtalker(img, aud, out)
+

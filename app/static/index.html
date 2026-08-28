@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Split and Stitch — AI Character Swap Studio</title>
+  <title>FaceSwap AI — AI Video Face Swap Studio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -24,8 +24,8 @@
           </svg>
         </div>
         <div>
-          <h1>Split and Stitch</h1>
-          <p class="subtitle">Multi-field AI character replacement, auto-chunking &amp; synchronized audio</p>
+          <h1>FaceSwap AI</h1>
+          <p class="subtitle">AI-powered video face swap — powered by Replicate</p>
         </div>
       </div>
       <div id="status-pill" class="status-pill checking">
@@ -98,13 +98,12 @@
         <!-- Generation Settings Controls -->
         <div class="settings-bar">
           <div class="setting-item">
-            <label for="engine-select">AI Model Engine</label>
+            <label for="engine-select">AI Engine</label>
             <div class="select-wrapper">
               <select id="engine-select">
-                <option value="wan22" selected>Wan2.2 Animate (Full Body Motion)</option>
-                <option value="roop">Roop Face Swap (Deep Face Replacement - FAST)</option>
-                <option value="sadtalker">SadTalker (Animate Face from Video Audio)</option>
-                <option value="echomimic">EchoMimic (Lip Sync from Video Audio)</option>
+                <option value="roop" selected>Face Swap Mode (Keeps Character's body/background)</option>
+                <option value="wan22">Image Animation Mode (Wan2.2 HF Space - Keeps Character's body)</option>
+                <option value="replicate_animator">Image Animation Mode (Replicate - Keeps Character's body)</option>
               </select>
             </div>
           </div>
@@ -112,23 +111,11 @@
             <label for="duration-select">Duration</label>
             <div class="select-wrapper">
               <select id="duration-select">
-                <option value="auto" selected>Auto (Full Video Duration)</option>
-                <option value="10">10 Seconds (1 Chunk)</option>
-                <option value="15">15 Seconds (2 Chunks)</option>
-                <option value="20">20 Seconds (2 Chunks)</option>
-                <option value="30">30 Seconds (3 Chunks)</option>
-                <option value="60">60 Seconds (6 Chunks)</option>
-                <option value="5">5 Seconds Max</option>
-                <option value="2">2 Seconds (Fast Test)</option>
-              </select>
-            </div>
-          </div>
-          <div class="setting-item">
-            <label for="resolution-select">Resolution</label>
-            <div class="select-wrapper">
-              <select id="resolution-select">
-                <option value="Low Res" selected>Low Res (480p - Fast & Consistent)</option>
-                <option value="Medium Res">Medium Res (832p - High GPU Usage)</option>
+                <option value="auto" selected>Auto (Full Video)</option>
+                <option value="10">10 Seconds (Quick Test)</option>
+                <option value="20">20 Seconds</option>
+                <option value="30">30 Seconds</option>
+                <option value="60">60 Seconds</option>
               </select>
             </div>
           </div>
@@ -136,7 +123,7 @@
 
         <!-- Submit Button -->
         <button id="start-btn" class="primary-btn" type="submit">
-          <span class="btn-text">Generate Character Swap</span>
+          <span class="btn-text">Swap Face Now</span>
           <svg class="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polygon points="5 3 19 12 5 21 5 3"></polygon>
           </svg>
@@ -199,7 +186,7 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-      <p>Split and Stitch Studio • Multi-Field Content Creation Engine</p>
+      <p>FaceSwap AI • Powered by Replicate A100 GPU</p>
     </footer>
   </div>
   <script src="/static/app.js"></script>

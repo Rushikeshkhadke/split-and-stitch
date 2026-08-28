@@ -4,3 +4,4 @@ python-multipart==0.0.20
 httpx==0.28.1
 pydantic-settings==2.9.1
 pillow>=10.0.0
+replicate

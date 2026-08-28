@@ -19,7 +19,7 @@ async function initApp() {
       if (data.mode === 'mock') {
         statusText.textContent = 'Pipeline Test Mode (Instant Split & Stitch)';
       } else if (data.mode === 'hf_space') {
-        statusText.textContent = 'ZeroGPU Online';
+        statusText.textContent = 'Replicate Face Swap Online';
       } else {
         statusText.textContent = 'ComfyUI Ready';
       }
@@ -66,12 +66,11 @@ function setupDropzones() {
       videoThumb.onloadedmetadata = () => {
         const dur = videoThumb.duration;
         if (dur && !isNaN(dur)) {
-          const chunks = Math.ceil(dur / 10);
           const autoOpt = $('duration-select').querySelector('option[value="auto"]');
           if (autoOpt) {
-            autoOpt.textContent = `Auto (Full Video: ${dur.toFixed(1)}s — ${chunks} chunk${chunks > 1 ? 's' : ''})`;
+            autoOpt.textContent = `Auto (Full Video: ${dur.toFixed(1)}s)`;
           }
-          videoFilename.textContent = `${file.name} (${dur.toFixed(1)}s — ${chunks} chunk${chunks > 1 ? 's' : ''})`;
+          videoFilename.textContent = `${file.name} (${dur.toFixed(1)}s)`;
         }
       };
       videoThumb.play().catch(() => {});
@@ -98,13 +97,20 @@ function setupDropzones() {
 
   // Drag over animations & drop handling
   [videoDropzone, charDropzone].forEach(dropzone => {
-    ['dragenter', 'dragover'].forEach(eventName => {
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
       dropzone.addEventListener(eventName, e => {
         e.preventDefault();
+        e.stopPropagation();
+      });
+    });
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropzone.addEventListener(eventName, () => {
         dropzone.classList.add('dragover');
       });
     });
-    ['dragleave'].forEach(eventName => {
+
+    ['dragleave', 'drop'].forEach(eventName => {
       dropzone.addEventListener(eventName, () => {
         dropzone.classList.remove('dragover');
       });
@@ -131,26 +137,12 @@ function setupDropzones() {
 }
 
 // Form Submission & Generation
-async function uploadToCloud(file) {
-  const fd = new FormData();
-  fd.append('files', file);
-  const res = await fetch('https://alexnasa-wan2-2-animate-zerogpu.hf.space/gradio_api/upload', {
-    method: 'POST',
-    body: fd
-  });
-  if (!res.ok) throw new Error(`Failed to upload ${file.name} to cloud`);
-  const data = await res.json();
-  if (Array.isArray(data) && data.length > 0) return data[0];
-  throw new Error(`Invalid upload response for ${file.name}`);
-}
-
 $('swap-form').addEventListener('submit', async e => {
   e.preventDefault();
 
   const videoFile = $('video-input').files[0];
   const charFile = $('character-input').files[0];
   const duration = $('duration-select').value;
-  const resolution = $('resolution-select').value;
 
   if (!videoFile || !charFile) {
     alert('Please select both a source video and a character image.');
@@ -166,28 +158,12 @@ $('swap-form').addEventListener('submit', async e => {
   resultSection.hidden = true;
 
   try {
-    const engine = $('engine-select') ? $('engine-select').value : 'wan22';
+    const engine = $('engine-select') ? $('engine-select').value : 'liveportrait';
     const formData = new FormData();
     formData.append('engine', engine);
     formData.append('max_duration', duration);
-    formData.append('resolution', resolution);
     formData.append('video', videoFile);
     formData.append('character', charFile);
-
-    // If file is large and running on Vercel cloud, also provide remote cloud paths
-    const isCloud = window.location.hostname.includes('vercel.app');
-    const isLarge = (videoFile.size + charFile.size) > 4.0 * 1024 * 1024;
-    if (isCloud && isLarge) {
-      try {
-        updateProgress(15, 'Uploading Video...', `Transferring ${videoFile.name} (${(videoFile.size / (1024 * 1024)).toFixed(1)} MB) to cloud`);
-        const videoRemotePath = await uploadToCloud(videoFile);
-        const charRemotePath = await uploadToCloud(charFile);
-        formData.set('video_remote_path', videoRemotePath);
-        formData.set('char_remote_path', charRemotePath);
-      } catch (uploadErr) {
-        console.warn('Cloud upload notice:', uploadErr);
-      }
-    }
 
     updateProgress(35, 'Starting Task...', 'Registering generation job for automatic chunk processing');
 
@@ -231,27 +207,19 @@ async function pollJobStatus() {
     const progress = job.progress || 0;
 
     let detail = 'Executing AI model generation';
-    if (stage.includes('Uploading')) detail = 'Transferring media to AI inference server';
-    else if (stage.includes('Queuing')) detail = 'Waiting for worker slot in queue';
-    else if (stage.includes('Downloading')) detail = 'Retrieving character-swapped video';
-    else if (stage.includes('Restoring')) detail = 'Finalizing audio sync & encoding';
-    else if (stage.includes('Stitching')) detail = 'Merging processed video chunks seamlessly';
-    else if (stage.includes('Split into')) detail = `Video divided into ${job.total_chunks} sequential segments (<= 10s each)`;
+    if (stage.includes('Uploading')) detail = 'Transferring media to secure processing node';
+    else if (stage.includes('Extracting')) detail = 'Separating original audio track';
+    else if (stage.includes('Restoring')) detail = 'Muxing original audio back onto generated video';
+    else if (stage.includes('Face Swapping')) detail = 'AI model is mapping character features to video frames';
 
-    updateProgress(progress, stage, detail, job);
+    updateProgress(progress, stage, detail);
 
     if (job.failed) {
       clearInterval(pollInterval);
       const rawError = job.error || 'Unknown error occurred';
       const cleanError = rawError.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').trim();
-      // Show failure state without resetting progress bar to 0 (would be confusing)
       $('stage-label').textContent = 'Generation Failed';
       $('stage-detail').textContent = cleanError;
-      if (job.total_chunks && job.total_chunks > 1) {
-        const chunkBadge = $('chunk-badge');
-        chunkBadge.hidden = false;
-        chunkBadge.textContent = `CHUNK ${job.current_chunk || 1} / ${job.total_chunks}`;
-      }
       $('start-btn').disabled = false;
       $('retry-wrap').hidden = false;
     } else {
@@ -277,19 +245,13 @@ async function pollJobStatus() {
   }
 }
 
-function updateProgress(percent, stageText, detailText, job = null) {
+function updateProgress(percent, stageText, detailText) {
   $('progress-bar').style.width = `${percent}%`;
   $('progress-percent').textContent = `${percent}%`;
   $('stage-label').textContent = stageText;
   if (detailText) $('stage-detail').textContent = detailText;
-
-  const chunkBadge = $('chunk-badge');
-  if (job && job.total_chunks && job.total_chunks > 1) {
-    chunkBadge.hidden = false;
-    chunkBadge.textContent = `Chunk ${job.current_chunk || 1} / ${job.total_chunks}`;
-  } else {
-    chunkBadge.hidden = true;
-  }
+  
+  $('chunk-badge').hidden = true;
 }
 
 // Retry Handler

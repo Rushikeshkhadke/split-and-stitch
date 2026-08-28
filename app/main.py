@@ -1,6 +1,7 @@
 import asyncio
 import json
 import math
+import os
 import shutil
 import subprocess
 import tempfile
@@ -8,6 +9,9 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
+
+# Inject API token into environment
+
 
 import httpx
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
@@ -27,6 +31,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory=ROOT / "app" / "static"), name="static")
+app.mount("/data", StaticFiles(directory=ROOT / "data"), name="data")
 jobs: dict[str, dict[str, Any]] = {}
 
 
@@ -418,22 +423,22 @@ async def preflight() -> dict[str, Any]:
         }
 
     if settings.mode == "hf_space":
-        connection = await worker_connectivity()
-        if not connection["comfyui_reachable"]:
-            problems.append(f"Hugging Face Space is unreachable at {settings.hf_space_url}: {connection['error']}")
+        import os
+        if not os.environ.get("REPLICATE_API_TOKEN"):
+            problems.append("REPLICATE_API_TOKEN is not set.")
         return {
             "ready": not problems,
             "problems": problems,
             "mode": "hf_space",
-            "comfyui_reachable": connection["comfyui_reachable"],
+            "comfyui_reachable": True,
             "gpu_detected": True,
             "wan2_2_model_detected": True,
             "workflow_detected": True,
-            "connectivity_error": connection["error"],
-            "gpu": "Wan2.2 ZeroGPU (alexnasa/Wan2.2-Animate-ZEROGPU)",
-            "vram_mb": None,
-            "worker_url": settings.hf_space_url,
-            "recommended": "Hugging Face Wan2.2 Animate ZeroGPU Space is online and ready for generation."
+            "connectivity_error": None,
+            "gpu": "Replicate A100 GPU",
+            "vram_mb": 80000,
+            "worker_url": "https://api.replicate.com",
+            "recommended": "Replicate A100 GPU is online and ready for high-speed Face Swapping and Animation."
         }
 
     connection = await worker_connectivity()
@@ -604,42 +609,76 @@ async def generate_hf_roop(
     job_id: str | None = None,
     output_dir: Path | None = None
 ) -> Path:
-    """Face-swaps character into video using tonyassi/video-face-swap (CPU-based, no quota cost)."""
+    import replicate, os, time, asyncio, httpx, uuid
+    
     if job_id:
-        update_job(job_id, stage="Initializing Roop Face Swap...", progress=20)
+        update_job(job_id, stage="Reconstructing Face on GPU...", progress=20)
+
+    # We use ngrok to host the local files publicly for the Replicate container
+    ngrok_base = "https://earmark-factual-engorge.ngrok-free.dev"
+    
+    # Construct relative paths assuming video is in data/jobs/...
+    try:
+        vid_rel = video.relative_to(ROOT / "data").as_posix()
+        char_rel = character.relative_to(ROOT / "data").as_posix()
+    except Exception:
+        # fallback if not in data dir
+        raise RuntimeError("Files must be in data directory for ngrok hosting")
         
-    def _run_roop():
-        from gradio_client import Client, handle_file
-        # Gradio client handles polling, uploads, and SSE formatting automatically
-        client = Client("tonyassi/video-face-swap")
-        result = client.predict(
-            input_image=handle_file(str(character.resolve())),
-            input_video=handle_file(str(video.resolve())),
-            gender="all",
-            api_name="/generate"
-        )
-        return result
+    vid_url = f"{ngrok_base}/data/{vid_rel}"
+    char_url = f"{ngrok_base}/data/{char_rel}"
+
+    def _run_replicate():
+        attempts = 0
+        while attempts < 3:
+            attempts += 1
+            try:
+                pred = replicate.predictions.create(
+                    version="50a0a0018673852629578e627576326036b407e0dbd8cf8a0b5028296726dc5c",
+                    input={
+                        "source_image": char_url,
+                        "target_video": vid_url,
+                        "enhance": True
+                    }
+                )
+                while True:
+                    time.sleep(3)
+                    pred.reload()
+                    if pred.status == "succeeded":
+                        out = pred.output
+                        if isinstance(out, list) and len(out) > 0: return str(out[0])
+                        return str(out)
+                    elif pred.status in ("failed", "canceled"):
+                        error_msg = str(pred.error)
+                        print(f"ddvinh1 failed: {error_msg}")
+                        raise RuntimeError(f"Replicate failed with status: {pred.status} - Error: {error_msg}")
+            except Exception as e:
+                print(f"Request failed: {e}. Retrying in 5s...")
+                time.sleep(5)
+        raise RuntimeError("Replicate failed too many times.")
 
     try:
         if job_id:
-            update_job(job_id, stage="Roop processing face swap (CPU: may take several mins)...", progress=50)
-            
-        result_path = await asyncio.to_thread(_run_roop)
-        
-        if not result_path or not Path(result_path).exists():
-            raise RuntimeError("Roop returned empty or missing output.")
-            
+            update_job(job_id, stage="Reconstructing Beard & Face on Replicate...", progress=50)
+
+        result_url = await asyncio.to_thread(_run_replicate)
+
         if job_id:
-            update_job(job_id, stage="Downloading Roop output...", progress=90)
-            
-        target_dir = output_dir or video.parent
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / f"roop_generated_{uuid.uuid4().hex[:6]}.mp4"
-        shutil.copy2(result_path, target)
-        return target
-        
+            update_job(job_id, stage="Downloading result...", progress=90)
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.get(result_url)
+            resp.raise_for_status()
+
+            target_dir = output_dir or video.parent
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / f"replicate_ddvinh1_{uuid.uuid4().hex[:6]}.mp4"
+            target.write_bytes(resp.content)
+            return target
+
     except Exception as e:
-        raise RuntimeError(f"Roop Error: {e}")
+        raise RuntimeError(f"Replicate Error: {e}")
+
 
 
 async def generate_hf_sadtalker(
@@ -833,127 +872,54 @@ async def generate_hf_liveportrait(
     job_id: str | None = None,
     output_dir: Path | None = None
 ) -> Path:
-    """Submits generation to KlingTeam/LivePortrait Space and downloads the animated output MP4."""
-    LP_BASE = "https://klingteam-liveportrait.hf.space"
+    """Submits generation to Replicate Face Swap (ddvinh1)."""
+    import replicate, os, time, asyncio, httpx, uuid
+    
+    if job_id:
+        update_job(job_id, stage="Uploading to Replicate...", progress=20)
 
-    timeout = httpx.Timeout(connect=30, read=300, write=300, pool=30)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        # 1. Upload character portrait (source face)
-        if job_id:
-            update_job(job_id, stage="Uploading portrait to LivePortrait...", progress=15)
-        with open(character, "rb") as f:
-            mime = "image/png" if character.suffix.lower() == ".png" else "image/jpeg"
-            r_up1 = await client.post(
-                f"{LP_BASE}/upload",
-                files={"files": (character.name, f, mime)},
-                headers={"Authorization": f"Bearer {settings.hf_token}"}
+    def _run_replicate():
+        with open(character, "rb") as f_img, open(video, "rb") as f_vid:
+            pred = replicate.predictions.create(
+                version="754801116664d602db035e40ee954ebca74b1f6fdf6ebdfb180d565cc52f6b89",
+                input={
+                    "swap_image": f_img,
+                    "target_video": f_vid,
+                    
+                }
             )
-            r_up1.raise_for_status()
-            char_remote = r_up1.json()[0]
+        while True:
+            time.sleep(3)
+            pred.reload()
+            if pred.status == "succeeded":
+                out = pred.output
+                if isinstance(out, list) and len(out) > 0: return str(out[0])
+                return str(out)
+            elif pred.status in ("failed", "canceled"):
+                raise RuntimeError(f"Replicate failed with status: {pred.status}")
 
-        # 2. Upload driving video
+    try:
         if job_id:
-            update_job(job_id, stage="Uploading driving video to LivePortrait...", progress=25)
-        with open(video, "rb") as f:
-            r_up2 = await client.post(
-                f"{LP_BASE}/upload",
-                files={"files": (video.name, f, "video/mp4")},
-                headers={"Authorization": f"Bearer {settings.hf_token}"}
-            )
-            r_up2.raise_for_status()
-            vid_remote = r_up2.json()[0]
+            update_job(job_id, stage="Face Swapping on Replicate A100 GPU...", progress=50)
 
-        if job_id:
-            update_job(job_id, stage="Queuing LivePortrait task...", progress=30)
-
-        # 3. Call gpu_wrapped_execute_video
-        payload = {
-            "data": [
-                {"path": char_remote, "meta": {"_type": "gradio.FileData"}},
-                {"path": vid_remote, "meta": {"_type": "gradio.FileData"}},
-                True,   # relative motion
-                True,   # do crop
-                True    # paste-back
-            ]
-        }
-        r_call = await client.post(
-            f"{LP_BASE}/call/gpu_wrapped_execute_video",
-            json=payload,
-            headers={"Authorization": f"Bearer {settings.hf_token}"}
-        )
-        r_call.raise_for_status()
-        event_id = r_call.json().get("event_id")
-        if not event_id:
-            raise RuntimeError(f"LivePortrait returned no event_id: {r_call.text}")
+        result_url = await asyncio.to_thread(_run_replicate)
 
         if job_id:
-            update_job(job_id, stage="Processing with LivePortrait ZeroGPU...", progress=50)
+            update_job(job_id, stage="Downloading result...", progress=90)
 
-        # 4. Stream SSE for result
-        sse_url = f"{LP_BASE}/call/gpu_wrapped_execute_video/{event_id}"
-        final_video_url = None
-        error_msg = None
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.get(result_url)
+            resp.raise_for_status()
 
-        async with client.stream("GET", sse_url, headers={"Authorization": f"Bearer {settings.hf_token}"}, timeout=600) as stream:
-            async for line in stream.aiter_lines():
-                if not line:
-                    continue
-                if line.startswith("event: heartbeat"):
-                    if job_id:
-                        current = read_job(job_id) or {}
-                        current_p = min(90, current.get("progress", 50) + 5)
-                        update_job(job_id, stage="LivePortrait animating frames...", progress=current_p)
-                elif line.startswith("event: error"):
-                    error_msg = "LivePortrait ZeroGPU error"
-                elif line.startswith("data:"):
-                    raw_data = line[5:].strip()
-                    if not raw_data or raw_data == "null":
-                        continue
-                    try:
-                        data = json.loads(raw_data)
-                        if isinstance(data, dict) and "error" in data:
-                            error_msg = str(data.get("error") or "LivePortrait generation error")
-                            break
-                        if isinstance(data, list) and len(data) >= 1:
-                            # Output indices: [0]=animated_video_original_space, [1]=animated_video
-                            # Prefer the paste-back result at index 1
-                            for out_item in reversed(data):
-                                if isinstance(out_item, dict):
-                                    url = out_item.get("url") or out_item.get("path")
-                                    if url:
-                                        final_video_url = url
-                                        break
-                                elif isinstance(out_item, str) and out_item:
-                                    final_video_url = out_item
-                                    break
-                            break
-                    except Exception:
-                        pass
+            target_dir = output_dir or video.parent
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / f"replicate_faceswap_{uuid.uuid4().hex[:6]}.mp4"
+            target.write_bytes(resp.content)
+            return target
 
-        if error_msg:
-            raise RuntimeError(error_msg)
-        if not final_video_url:
-            raise RuntimeError("LivePortrait generation completed without returning an output video URL.")
+    except Exception as e:
+        raise RuntimeError(f"Replicate Error: {e}")
 
-        if job_id:
-            update_job(job_id, stage="Downloading LivePortrait output...", progress=92)
-
-        # Normalize download URL
-        if not final_video_url.startswith("http"):
-            final_video_url = f"{LP_BASE}/{final_video_url.lstrip('/')}"
-
-        # 5. Download output
-        target_dir = output_dir or video.parent
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / f"lp_generated_{uuid.uuid4().hex[:6]}.mp4"
-        r_down = await client.get(
-            final_video_url,
-            headers={"Authorization": f"Bearer {settings.hf_token}"},
-            timeout=120
-        )
-        r_down.raise_for_status()
-        target.write_bytes(r_down.content)
-        return target
 
 
 async def generate_segment(segment: Path, character: Path, output_prefix: str, frames: int) -> Path:
@@ -1006,6 +972,66 @@ async def generate_segment(segment: Path, character: Path, output_prefix: str, f
             await asyncio.sleep(2)
     raise RuntimeError("ComfyUI timed out after 60 minutes for one segment.")
 
+
+
+async def generate_replicate_animator(
+    video,
+    character,
+    job_id = None,
+    output_dir = None
+):
+    if job_id:
+        update_job(job_id, stage="Uploading to Replicate Animator...", progress=20)
+
+    def _run_animator():
+        import replicate, os, time
+        
+        
+        m = replicate.models.get('fofr/live-portrait')
+        
+        with open(character, "rb") as f_img, open(video, "rb") as f_vid:
+            pred = replicate.predictions.create(
+                version=m.latest_version.id,
+                input={
+                    "face_image": f_img,
+                    "driving_video": f_vid,
+                    "video_frame_load_cap": 0
+                }
+            )
+            
+        while True:
+            time.sleep(3)
+            pred.reload()
+            if pred.status == "succeeded":
+                return str(pred.output)
+            elif pred.status in ("failed", "canceled"):
+                raise RuntimeError(f"Replicate Animator failed with status: {pred.status}")
+
+    try:
+        import asyncio
+        import httpx
+        import shutil, uuid
+        
+        if job_id:
+            update_job(job_id, stage="Animating Image on Replicate...", progress=50)
+
+        result_url = await asyncio.to_thread(_run_animator)
+
+        if job_id:
+            update_job(job_id, stage="Downloading result...", progress=90)
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.get(result_url)
+            resp.raise_for_status()
+
+            target_dir = output_dir or video.parent
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / f"replicate_animator_{uuid.uuid4().hex[:6]}.mp4"
+            target.write_bytes(resp.content)
+            return target
+
+    except Exception as e:
+        raise RuntimeError(f"Replicate Animator Error: {e}")
 
 async def process(
     job_id: str,
@@ -1214,6 +1240,13 @@ async def process(
                     )
                 elif engine == "liveportrait":
                     gen_file = await generate_hf_liveportrait(
+                        video=chunk_path,
+                        character=current_character,
+                        job_id=job_id,
+                        output_dir=output_dir
+                    )
+                elif engine == "replicate_animator":
+                    gen_file = await generate_replicate_animator(
                         video=chunk_path,
                         character=current_character,
                         job_id=job_id,
