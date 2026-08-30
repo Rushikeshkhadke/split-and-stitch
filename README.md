@@ -1,45 +1,31 @@
-﻿# FaceSwap AI (Local/Client Version)
+# Split and Stitch
 
-A powerful, chunk-based Video Face Swapping tool built with FastAPI and the Replicate API. This tool processes long videos by chunking them, running GPU-accelerated Face Swaps with GFPGAN Face Enhancement, and seamlessly stitching the audio and video back together.
+A powerful, chunk-based Video Face Swapping tool built with FastAPI and MagicAPI. This tool processes long videos by chunking them to bypass API file limits, running GPU-accelerated Face Swaps, upscaling the final video using RealESRGAN, and seamlessly stitching the audio and video back together.
 
-## Requirements
+## Architecture
+- **Frontend:** Vanilla JS/HTML/CSS (Ready to deploy on Vercel)
+- **Backend:** Python FastAPI (Ready to deploy on Render using the provided Dockerfile)
+- **Video Engine:** FFmpeg (Chunking, downscaling to 720p, stitching, audio restoration)
+- **AI Engine:** MagicAPI (FaceFusion Video V3 & RealESRGAN Upscaler)
+- **Temporary CDN:** Tmpfiles.org (To bypass firewalls blocking cloud workers)
 
-1. **Python 3.10+**
-2. **FFmpeg**: Must be installed and available in your system PATH.
-3. **Ngrok**: Required to securely expose your local files to the Replicate GPU container.
-4. **Replicate API Token**: You will need a Replicate account and an API token.
+## Setup Instructions (For Vercel/Render Deployment)
 
-## Setup Instructions
+### 1. Backend (Render.com)
+1. Fork or clone this repository to your GitHub account.
+2. Log into Render.com and create a new **Web Service**.
+3. Connect your repository. Render will automatically read the Dockerfile to install FFmpeg and Python.
+4. Go to the Environment Variables section in Render and add your API key:
+   - MAGICAPI_KEY = your_magicapi_key_here
+5. Deploy the backend. Render will give you a live backend URL (e.g., https://split-and-stitch-api.onrender.com).
 
-1. **Install Dependencies:**
-   Open a terminal in this folder and run:
-   \\\ash
-   pip install -r requirements.txt
-   \\\
+### 2. Frontend (Vercel.com)
+1. Open pp/static/app.js and update the API URLs to point to your new Render backend URL instead of relative paths. (e.g., change /api/jobs to https://split-and-stitch-api.onrender.com/api/jobs).
+2. Log into Vercel.com and create a new project.
+3. Connect the exact same GitHub repository, but set the **Root Directory** to pp/static.
+4. Deploy the frontend!
 
-2. **Set your API Token:**
-   Set your Replicate token as an environment variable in your terminal:
-   - **Windows (PowerShell):** \\="your_token_here"\
-   - **Mac/Linux:** \export REPLICATE_API_TOKEN="your_token_here"\
-
-3. **Start the Backend Server:**
-   In the same terminal, run:
-   \\\ash
-   python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-   \\\
-
-4. **Start the Ngrok Tunnel:**
-   Open a *second* terminal and run:
-   \\\ash
-   ngrok http 8000
-   \\\
-   *(Note: The backend is hardcoded to look for a specific ngrok URL in the codebase. If you are running this on a new machine, you must update the \
-grok_base\ variable in \pp/main.py\ to match the public URL ngrok gives you).*
-
-5. **Open the Studio:**
-   Open your browser and navigate to: [http://127.0.0.1:8000](http://127.0.0.1:8000)
-
-## Security Features
-
-- **Upload Limits:** Capped at 2GB for videos and 10MB for images to prevent out-of-memory crashes.
-- **Duration Cap:** Maximum video duration is clamped to 5 minutes to prevent runaway API costs on your Replicate account.
+## Security & Optimizations
+- **Auto-Downscaling:** The backend automatically downscales 4K/1080p videos to 720p before uploading to save API costs.
+- **Firewall Bypass:** Uses an advanced regex scraper to bypass Catbox/tmpfiles CDN firewalls blocking MagicAPI worker nodes.
+- **Chunking:** Safely processes long videos in 10-second chunks to avoid API timeouts and memory limits.
