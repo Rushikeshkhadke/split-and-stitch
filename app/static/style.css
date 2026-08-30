@@ -643,3 +643,19 @@ select:focus {
   cursor: not-allowed;
   transform: none;
 }
+
+
+.expert-tips-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  font-size: 0.9rem;
+  color: #94a3b8;
+}
+
+@media (max-width: 640px) {
+  .expert-tips-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
