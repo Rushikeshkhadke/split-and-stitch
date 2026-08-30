@@ -215,7 +215,7 @@ async function pollJobStatus() {
   if (!jobId) return;
 
   try {
-    const res = await fetch(`/api/jobs/${jobId}`);
+    const res = await fetch(`${API_BASE}/api/jobs/${jobId}`);
     if (!res.ok) return;
     const job = await res.json();
 
@@ -279,7 +279,7 @@ $('retry-btn').addEventListener('click', async () => {
   updateProgress(15, 'Resuming Generation...', 'Re-submitting failed chunk to AI Model');
 
   try {
-    const res = await fetch(`/api/jobs/${jobId}/retry`, { method: 'POST' });
+    const res = await fetch(`${API_BASE}/api/jobs/${jobId}/retry`, { method: 'POST' });
     if (!res.ok) throw new Error('Could not resume job');
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = setInterval(pollJobStatus, 1500);
