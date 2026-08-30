@@ -332,6 +332,16 @@ def create_watermark(path: Path):
     w, h = 300, 40
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
+    # Drop shadow
+    d.text((w // 2 + 1, h // 2 + 1), "made with split & stitch", fill=(0, 0, 0, 200), anchor="mm")
+    d.text((w // 2 - 1, h // 2 - 1), "made with split & stitch", fill=(0, 0, 0, 200), anchor="mm")
+    # Main text
+    d.text((w // 2, h // 2), "made with split & stitch", fill=(255, 255, 255, 230), anchor="mm")
+    img.save(path)
+    return path
+    w, h = 300, 40
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
     d.rounded_rectangle([(0, 0), (w, h)], radius=20, fill=(0, 0, 0, 160))
     # Standard text, since we can't guarantee an italic font exists on the server
     d.text((w // 2, h // 2), "made with split & stitch", fill=(255, 255, 255, 230), anchor="mm")

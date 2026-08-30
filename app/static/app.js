@@ -311,21 +311,24 @@ setupDropzones();
 initApp();
 
 
-// Share Logic
-share-btn.addEventListener('click', async () => {
-  const videoUrl = result-video.src;
+
+
+window.shareVideo = async function() {
+  const videoUrl = document.getElementById('result-video').src;
+  if (!videoUrl) return alert('No video to share yet!');
+  
   if (navigator.share) {
     try {
       await navigator.share({
-        title: 'My AI Face Swap',
-        text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+        title: 'Split & Stitch AI',
+        text: 'Check out this insane Face Swap I made with Split & Stitch!',
         url: videoUrl
       });
     } catch (err) {
-      console.log('User cancelled share');
+      console.log('Share error:', err);
     }
   } else {
     const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
     window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
   }
-});
+};
