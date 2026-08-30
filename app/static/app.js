@@ -1,3 +1,7 @@
+const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') 
+    ? 'http://127.0.0.1:8000' 
+    : 'https://split-and-stitch.onrender.com';
+
 const $ = id => document.getElementById(id);
 
 let jobId = null;
@@ -11,7 +15,7 @@ async function initApp() {
   const startBtn = $('start-btn');
 
   try {
-    const res = await fetch('/api/preflight');
+    const res = await fetch(API_BASE + '/api/preflight');
     const data = await res.json();
 
     if (data.ready) {
@@ -407,7 +411,7 @@ $('swap-form').addEventListener('submit', async e => {
 
     updateProgress(35, 'Starting Task...', 'Registering generation job for automatic chunk processing');
 
-    const res = await fetch('/api/jobs', { method: 'POST', body: formData 
+    const res = await fetch(API_BASE + '/api/jobs', { method: 'POST', body: formData 
   share-btn.addEventListener('click', async () => {
     const videoUrl = result-video.src;
     if (navigator.share) {
