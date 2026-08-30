@@ -37,7 +37,7 @@ from PIL import Image, ImageDraw
 
 from .settings import ROOT, settings
 
-app = FastAPI(title="Wan2.2 Character Swap")
+app = FastAPI(title="Split & Stitch API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
