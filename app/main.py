@@ -326,11 +326,69 @@ def stitch_video_chunks(chunk_paths: list[Path], output_path: Path, fps: float =
     return output_path
 
 
+
+def create_watermark(path: Path):
+    if path.exists(): return path
+    w, h = 300, 40
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([(0, 0), (w, h)], radius=20, fill=(0, 0, 0, 160))
+    # Standard text, since we can't guarantee an italic font exists on the server
+    d.text((w // 2, h // 2), "made with split & stitch", fill=(255, 255, 255, 230), anchor="mm")
+    img.save(path)
+    return path
+
 def restore_audio_and_mux(source_video: Path | None, stitched_video: Path, final_output: Path) -> Path:
-    """Muxes the original synchronized audio track from source_video onto stitched_video."""
+    \"\"\"Muxes audio and applies the 'made with split & stitch' watermark.\"\"\"
+    watermark_path = final_output.parent / "watermark.png"
+    create_watermark(watermark_path)
+    
     if not source_video or not source_video.exists():
-        if stitched_video.resolve() != final_output.resolve():
-            shutil.copy2(stitched_video, final_output)
+        run(
+            "ffmpeg", "-y",
+            "-i", str(stitched_video),
+            "-i", str(watermark_path),
+            "-filter_complex", "[0:v][1:v]overlay=W-w-20:H-h-20",
+            "-c:v", "libx264", "-crf", "22", "-preset", "fast",
+            str(final_output)
+        )
+        return final_output
+
+    try:
+        meta = probe(source_video)
+        if meta.get("has_audio"):
+            run(
+                "ffmpeg", "-y",
+                "-i", str(stitched_video),
+                "-i", str(watermark_path),
+                "-i", str(source_video),
+                "-filter_complex", "[0:v][1:v]overlay=W-w-20:H-h-20[outv]",
+                "-map", "[outv]",
+                "-map", "2:a:0?",
+                "-c:v", "libx264", "-crf", "22", "-preset", "fast",
+                "-c:a", "aac", "-shortest",
+                str(final_output)
+            )
+            return final_output
+        else:
+            run(
+                "ffmpeg", "-y",
+                "-i", str(stitched_video),
+                "-i", str(watermark_path),
+                "-filter_complex", "[0:v][1:v]overlay=W-w-20:H-h-20",
+                "-c:v", "libx264", "-crf", "22", "-preset", "fast",
+                str(final_output)
+            )
+            return final_output
+    except Exception:
+        run(
+            "ffmpeg", "-y",
+            "-i", str(stitched_video),
+            "-i", str(watermark_path),
+            "-filter_complex", "[0:v][1:v]overlay=W-w-20:H-h-20",
+            "-c:v", "libx264", "-crf", "22", "-preset", "fast",
+            str(final_output)
+        )
         return final_output
 
     try:

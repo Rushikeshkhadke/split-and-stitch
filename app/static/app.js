@@ -85,12 +85,50 @@ function setupDropzones() {
           videoFilename.textContent = `${file.name} (${dur.toFixed(1)}s)`;
         }
       };
-      videoThumb.play().catch(() => {});
+      videoThumb.play().catch(() => {
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
+  });
+});
       videoFilename.textContent = file.name;
       videoPlaceholder.hidden = true;
       videoPreviewWrap.hidden = false;
     }
+  
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
   });
+});
 
   // Character drop & change
   charInput.addEventListener('change', e => {
@@ -105,7 +143,26 @@ function setupDropzones() {
       };
       reader.readAsDataURL(file);
     }
+  
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
   });
+});
 
   // Drag over animations & drop handling
   [videoDropzone, charDropzone].forEach(dropzone => {
@@ -113,21 +170,154 @@ function setupDropzones() {
       dropzone.addEventListener(eventName, e => {
         e.preventDefault();
         e.stopPropagation();
-      });
-    });
+      
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
+  });
+});
+    
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
+  });
+});
 
     ['dragenter', 'dragover'].forEach(eventName => {
       dropzone.addEventListener(eventName, () => {
         dropzone.classList.add('dragover');
-      });
-    });
+      
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
+  });
+});
+    
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
+  });
+});
 
     ['dragleave', 'drop'].forEach(eventName => {
       dropzone.addEventListener(eventName, () => {
         dropzone.classList.remove('dragover');
-      });
-    });
+      
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
   });
+});
+    
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
+  });
+});
+  
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
+  });
+});
 
   videoDropzone.addEventListener('drop', e => {
     e.preventDefault();
@@ -136,7 +326,26 @@ function setupDropzones() {
       videoInput.files = e.dataTransfer.files;
       videoInput.dispatchEvent(new Event('change', { bubbles: true }));
     }
+  
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
   });
+});
 
   charDropzone.addEventListener('drop', e => {
     e.preventDefault();
@@ -145,7 +354,26 @@ function setupDropzones() {
       charInput.files = e.dataTransfer.files;
       charInput.dispatchEvent(new Event('change', { bubbles: true }));
     }
+  
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
   });
+});
 }
 
 // Form Submission & Generation
@@ -179,7 +407,26 @@ $('swap-form').addEventListener('submit', async e => {
 
     updateProgress(35, 'Starting Task...', 'Registering generation job for automatic chunk processing');
 
-    const res = await fetch('/api/jobs', { method: 'POST', body: formData });
+    const res = await fetch('/api/jobs', { method: 'POST', body: formData 
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
+  });
+});
     const rawText = await res.text();
     let jobData = null;
     try {
@@ -204,6 +451,25 @@ $('swap-form').addEventListener('submit', async e => {
     startBtn.disabled = false;
     alert('Generation error: ' + err.message);
   }
+
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
+  });
 });
 
 // Poll Backend Status
@@ -275,7 +541,26 @@ $('retry-btn').addEventListener('click', async () => {
   updateProgress(15, 'Resuming Generation...', 'Re-submitting failed chunk to AI Model');
 
   try {
-    const res = await fetch(`/api/jobs/${jobId}/retry`, { method: 'POST' });
+    const res = await fetch(`/api/jobs/${jobId}/retry`, { method: 'POST' 
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
+  });
+});
     if (!res.ok) throw new Error('Could not resume job');
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = setInterval(pollJobStatus, 1500);
@@ -285,6 +570,25 @@ $('retry-btn').addEventListener('click', async () => {
     retryBtn.disabled = false;
     $('retry-wrap').hidden = false;
   }
+
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
+  });
 });
 
 // Reset Handler
@@ -300,6 +604,25 @@ $('reset-btn').addEventListener('click', () => {
   $('retry-wrap').hidden = true;
   $('chunk-badge').hidden = true;
   jobId = null;
+
+  share-btn.addEventListener('click', async () => {
+    const videoUrl = result-video.src;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My AI Face Swap',
+          text: 'Check out this insane Face Swap I made with Split & Stitch AI!',
+          url: videoUrl
+        });
+      } catch (err) {
+        console.log('User cancelled share');
+      }
+    } else {
+      // Fallback for desktop: open Twitter intent
+      const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
+      window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    }
+  });
 });
 
 // Run Setup
