@@ -339,7 +339,7 @@ def create_watermark(path: Path):
     return path
 
 def restore_audio_and_mux(source_video: Path | None, stitched_video: Path, final_output: Path) -> Path:
-    \"\"\"Muxes audio and applies the 'made with split & stitch' watermark.\"\"\"
+    """Muxes audio and applies the 'made with split & stitch' watermark."""
     watermark_path = final_output.parent / "watermark.png"
     create_watermark(watermark_path)
     
