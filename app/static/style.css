@@ -13,6 +13,19 @@
   --success: #10b981;
   --radius: 8px;
   --radius-lg: 12px;
+
+  --border-subtle: rgba(255, 255, 255, 0.1);
+  --border-focus: rgba(255, 255, 255, 0.3);
+  --accent-cyan: #ffffff;
+  --accent-primary: #ffffff;
+  --text-main: #ffffff;
+  --bg-card-subtle: #0f0f0f;
+  --border-card: rgba(255, 255, 255, 0.1);
+  --accent-success: #10b981;
+  --text-subtle: #52525b;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+
 }
 
 *, *::before, *::after {
@@ -204,7 +217,7 @@ h1 {
   min-height: 200px;
   border: 1.5px dashed var(--border-subtle);
   border-radius: var(--radius-md);
-  background: rgba(15, 23, 42, 0.6);
+  background: rgba(255, 255, 255, 0.02);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -218,7 +231,7 @@ h1 {
 
 .dropzone:hover, .dropzone.dragover {
   border-color: var(--border-focus);
-  background: rgba(30, 41, 59, 0.4);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .dropzone input[type="file"] {
@@ -333,7 +346,7 @@ select {
   font-size: 0.85rem;
   font-weight: 500;
   color: var(--text-main);
-  background: #0f172a;
+  background: #000000;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   padding: 8px 12px;
