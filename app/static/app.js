@@ -306,6 +306,27 @@ $('reset-btn').addEventListener('click', () => {
   jobId = null;
 });
 
+
+function updateEngineText() {
+  const engineSelect = document.getElementById('engine-select');
+  if (!engineSelect) return;
+  const statusText = document.getElementById('status-text');
+  const footerText = document.querySelector('.app-subtitle') || document.querySelector('.app-header p');
+  
+  if (engineSelect.value === 'magicapi') {
+      statusText.textContent = 'MagicAPI FaceFusion Online';
+      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing — powered by MagicAPI';
+  } else if (engineSelect.value === 'fal') {
+      statusText.textContent = 'Fal.ai Engine Online';
+      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing — powered by Fal.ai Serverless';
+  } else {
+      statusText.textContent = 'Replicate Engine Online';
+      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing — powered by Replicate A100 GPU';
+  }
+}
+
+document.getElementById('engine-select')?.addEventListener('change', updateEngineText);
+
 // Run Setup
 setupDropzones();
 initApp();
