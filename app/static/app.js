@@ -19,7 +19,19 @@ async function initApp() {
       if (data.mode === 'mock') {
         statusText.textContent = 'Pipeline Test Mode (Instant Split & Stitch)';
       } else if (data.mode === 'hf_space') {
-        statusText.textContent = 'Replicate Face Swap Online';
+        
+        const engineSelect = document.getElementById('engine-select').value;
+        if (engineSelect === 'magicapi') {
+            statusText.textContent = 'MagicAPI FaceFusion Online';
+            document.querySelector('.app-footer p').textContent = 'FaceSwap AI • Powered by MagicAPI FaceFusion';
+        } else if (engineSelect === 'fal') {
+            statusText.textContent = 'Fal.ai Engine Online';
+            document.querySelector('.app-footer p').textContent = 'FaceSwap AI • Powered by Fal.ai Serverless';
+        } else {
+            statusText.textContent = 'Replicate Engine Online';
+            document.querySelector('.app-footer p').textContent = 'FaceSwap AI • Powered by Replicate A100 GPU';
+        }
+
       } else {
         statusText.textContent = 'ComfyUI Ready';
       }

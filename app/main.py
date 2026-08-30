@@ -8,6 +8,21 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
+
+async def upload_to_cdn(filepath: Path) -> str:
+    import httpx, re
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        with open(filepath, "rb") as f:
+            resp = await client.post("https://tmpfiles.org/api/v1/upload", files={"file": f})
+            resp.raise_for_status()
+            url = resp.json()["data"]["url"]
+            
+        html_resp = await client.get(url)
+        match = re.search(r'href="(https://tmpfiles\.org/dl/.*?)"', html_resp.text)
+        if match:
+            return match.group(1)
+        raise RuntimeError("Failed to extract direct link from tmpfiles CDN")
+
 from typing import Any
 
 # Inject API token into environment
@@ -260,6 +275,7 @@ def split_video_into_chunks(
             "-ss", f"{start_time:.6f}",
             "-i", str(video),
             "-t", f"{chunk_dur:.6f}",
+            "-vf", "scale=-2:'min(720,ih)'",
             "-avoid_negative_ts", "make_zero",
             "-c:v", "libx264",
             "-preset", "fast",
@@ -424,8 +440,8 @@ async def preflight() -> dict[str, Any]:
 
     if settings.mode == "hf_space":
         import os
-        if not os.environ.get("REPLICATE_API_TOKEN"):
-            problems.append("REPLICATE_API_TOKEN is not set.")
+        if not os.environ.get("FAL_KEY") and not os.environ.get("MAGICAPI_KEY") and not os.environ.get("REPLICATE_API_TOKEN"):
+            problems.append("No API Keys found! Please add MAGICAPI_KEY, FAL_KEY, or REPLICATE_API_TOKEN to your .env file.")
         return {
             "ready": not problems,
             "problems": problems,
@@ -603,81 +619,100 @@ async def generate_hf_wan_animate(
 
 
 
-async def generate_hf_roop(
-    video: Path,
-    character: Path,
-    job_id: str | None = None,
-    output_dir: Path | None = None
-) -> Path:
-    import replicate, os, time, asyncio, httpx, uuid
-    
-    if job_id:
-        update_job(job_id, stage="Reconstructing Face on GPU...", progress=20)
 
-    # We use ngrok to host the local files publicly for the Replicate container
-    ngrok_base = "https://earmark-factual-engorge.ngrok-free.dev"
+async def generate_magicapi_faceswap(video: Path, character: Path, job_id: str | None = None, output_dir: Path | None = None) -> Path:
+    import httpx, asyncio, uuid, os
+    update_job(job_id, stage="Uploading to CDN...", progress=20)
     
-    # Construct relative paths assuming video is in data/jobs/...
     try:
-        vid_rel = video.relative_to(ROOT / "data").as_posix()
-        char_rel = character.relative_to(ROOT / "data").as_posix()
-    except Exception:
-        # fallback if not in data dir
-        raise RuntimeError("Files must be in data directory for ngrok hosting")
+        vid_url = await upload_to_cdn(video)
+        char_url = await upload_to_cdn(character)
+    except Exception as e:
+        raise RuntimeError(f"Failed to upload files to anonymous CDN: {e}")
         
-    vid_url = f"{ngrok_base}/data/{vid_rel}"
-    char_url = f"{ngrok_base}/data/{char_rel}"
+    update_job(job_id, stage="MagicAPI FaceFusion processing...", progress=50)
+    
+    api_key = os.environ.get("MAGICAPI_KEY")
+    if not api_key: raise RuntimeError("MAGICAPI_KEY is not set in .env")
+    
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        resp = await client.post(
+            "https://api.magicapi.dev/api/v1/magicapi/faceswap-video-v3/run",
+            headers={"x-api-market-key": api_key},
+            json={"input": {"swap_image": char_url, "target_video": vid_url}}
+        )
+        if resp.status_code != 200:
+            
+            raise RuntimeError(f"MagicAPI Error: {resp.text}")
+        data = resp.json()
+        task_id = data.get("id") or data.get("job_id") or data.get("task_id")
+        
+        for _ in range(60):
+            await asyncio.sleep(5)
+            update_job(job_id, stage="MagicAPI FaceFusion Rendering...", progress=75)
+            s_resp = await client.get(f"https://api.magicapi.dev/api/v1/magicapi/faceswap-video-v3/status/{task_id}", headers={"x-api-market-key": api_key})
+            s_data = s_resp.json()
+            if s_data.get("status") == "COMPLETED" or s_data.get("status") == "succeeded":
+                result_url = s_data.get("result_url") or s_data.get("output_url") or s_data.get("url")
+                if not result_url and "output" in s_data:
+                    out_val = s_data["output"]
+                    if isinstance(out_val, str): result_url = out_val
+                    elif isinstance(out_val, dict):
+                        result_url = out_val.get("video_url") or out_val.get("video") or out_val.get("url") or out_val.get("result")
+                break
+            elif s_data.get("status") == "FAILED" or s_data.get("status") == "failed":
+                raise RuntimeError(f"MagicAPI Failed: {s_data}")
+        else:
+            raise RuntimeError("MagicAPI Timeout")
 
-    def _run_replicate():
-        attempts = 0
-        while attempts < 3:
-            attempts += 1
-            try:
-                pred = replicate.predictions.create(
-                    version="50a0a0018673852629578e627576326036b407e0dbd8cf8a0b5028296726dc5c",
-                    input={
-                        "source_image": char_url,
-                        "target_video": vid_url,
-                        "enhance": True
-                    }
-                )
-                while True:
-                    time.sleep(3)
-                    pred.reload()
-                    if pred.status == "succeeded":
-                        out = pred.output
-                        if isinstance(out, list) and len(out) > 0: return str(out[0])
-                        return str(out)
-                    elif pred.status in ("failed", "canceled"):
-                        error_msg = str(pred.error)
-                        print(f"ddvinh1 failed: {error_msg}")
-                        raise RuntimeError(f"Replicate failed with status: {pred.status} - Error: {error_msg}")
-            except Exception as e:
-                print(f"Request failed: {e}. Retrying in 5s...")
-                time.sleep(5)
-        raise RuntimeError("Replicate failed too many times.")
+        update_job(job_id, stage="Downloading MagicAPI Result...", progress=90)
+        d_resp = await client.get(result_url)
+        target = (output_dir or video.parent) / f"magicapi_{uuid.uuid4().hex[:6]}.mp4"
+        target.write_bytes(d_resp.content)
+        return target
 
+async def generate_fal_faceswap(video: Path, character: Path, job_id: str | None = None, output_dir: Path | None = None) -> Path:
+    import fal_client, os, asyncio, httpx, uuid
+    update_job(job_id, stage="Uploading to CDN...", progress=20)
     try:
-        if job_id:
-            update_job(job_id, stage="Reconstructing Beard & Face on Replicate...", progress=50)
-
-        result_url = await asyncio.to_thread(_run_replicate)
-
-        if job_id:
-            update_job(job_id, stage="Downloading result...", progress=90)
-
+        vid_url = await upload_to_cdn(video)
+        char_url = await upload_to_cdn(character)
+        update_job(job_id, stage="Reconstructing Face on Fal GPU...", progress=50)
+        def _run_fal():
+            return fal_client.subscribe("fal-ai/pixverse/swap", arguments={"video_url": vid_url, "image_url": char_url, "mode": "person"})
+        result = await asyncio.to_thread(_run_fal)
+        result_url = result['video']['url']
+        update_job(job_id, stage="Downloading result...", progress=90)
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.get(result_url)
-            resp.raise_for_status()
-
-            target_dir = output_dir or video.parent
-            target_dir.mkdir(parents=True, exist_ok=True)
-            target = target_dir / f"replicate_ddvinh1_{uuid.uuid4().hex[:6]}.mp4"
+            target = (output_dir or video.parent) / f"fal_pixverse_{uuid.uuid4().hex[:6]}.mp4"
             target.write_bytes(resp.content)
             return target
-
     except Exception as e:
-        raise RuntimeError(f"Replicate Error: {e}")
+        raise RuntimeError(f"Fal.ai Error: {e}")
+
+async def generate_replicate_faceswap(video: Path, character: Path, job_id: str | None = None, output_dir: Path | None = None) -> Path:
+    import replicate, asyncio, httpx, uuid
+    update_job(job_id, stage="Uploading to CDN...", progress=20)
+    
+    try:
+        vid_url = await upload_to_cdn(video)
+        char_url = await upload_to_cdn(character)
+    except Exception as e:
+        raise RuntimeError(f"Failed to upload files to anonymous CDN: {e}")
+    
+    def _run_replicate():
+        return replicate.run(
+            "ddvinh1/video-faceswap-gpu:d03ed9ee8be080470d03226a3c9be1d95394200c61ad04df626cbe0eb76ff622",
+            input={"target_video": vid_url, "swap_image": char_url, "enhance": True}
+        )
+    result_url = await asyncio.to_thread(_run_replicate)
+    update_job(job_id, stage="Downloading result...", progress=90)
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        resp = await client.get(result_url)
+        target = (output_dir or video.parent) / f"replicate_{uuid.uuid4().hex[:6]}.mp4"
+        target.write_bytes(resp.content)
+        return target
 
 
 
@@ -1033,6 +1068,60 @@ async def generate_replicate_animator(
     except Exception as e:
         raise RuntimeError(f"Replicate Animator Error: {e}")
 
+
+async def upscale_video(video_path: Path, job_id: str) -> Path:
+    update_job(job_id, stage="Uploading for Upscale...", progress=91)
+    vid_url = await upload_to_cdn(video_path)
+    
+    update_job(job_id, stage="Upscaling Video (Enhancing)...", progress=93)
+    magic_key = settings.magicapi_key
+    
+    payload = {
+        "version": "c23768236472c41b7a121ee735c8073e29080c01b32907740cfada61bff75320",
+        "input": {
+            "video_path": vid_url,
+            "model": "RealESRGAN_x4plus",
+            "resolution": "FHD"
+        }
+    }
+    
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        resp = await client.post(
+            "https://prod.api.market/api/v1/magicapi/video-upscaler-high-resolution-api/predictions",
+            headers={"x-api-market-key": magic_key},
+            json=payload
+        )
+        data = resp.json()
+        task_id = data.get("id")
+        
+        if not task_id:
+            print(f"Upscale failed: {data}")
+            return video_path
+            
+        for _ in range(120):
+            await asyncio.sleep(5)
+            s_resp = await client.get(
+                f"https://prod.api.market/api/v1/magicapi/video-upscaler-high-resolution-api/predictions/{task_id}",
+                headers={"x-api-market-key": magic_key}
+            )
+            s_data = s_resp.json()
+            
+            if s_data.get("status") in ["succeeded", "COMPLETED"]:
+                result_url = s_data.get("output")
+                if result_url:
+                    update_job(job_id, stage="Downloading Upscaled Video...", progress=98)
+                    d_resp = await client.get(result_url, timeout=120.0)
+                    upscaled_path = video_path.with_name("final_upscaled.mp4")
+                    with open(upscaled_path, "wb") as f_out:
+                        f_out.write(d_resp.content)
+                    return upscaled_path
+                break
+            elif s_data.get("status") in ["failed", "FAILED"]:
+                print(f"Upscale worker failed: {s_data}")
+                break
+                
+    return video_path
+
 async def process(
     job_id: str,
     video: Path | None = None,
@@ -1099,16 +1188,12 @@ async def process(
         # Case 1: Remote paths provided directly without local video file (fallback single-request)
         if not video or not video.exists():
             direct_dur = min(10, int(max_total_sec)) if max_total_sec else 10
-            raw_generated = await generate_hf_wan_animate(
-                video=None,
-                character=character,
-                max_duration=direct_dur,
-                resolution=resolution,
-                job_id=job_id,
-                video_remote_path=video_remote_path,
-                char_remote_path=char_remote_path,
-                output_dir=output_dir
-            )
+            if engine == "magicapi":
+                raw_generated = await generate_magicapi_faceswap(video=None, character=character, job_id=job_id, output_dir=output_dir)
+            elif engine == "fal":
+                raw_generated = await generate_fal_faceswap(video=None, character=character, job_id=job_id, output_dir=output_dir)
+            else:
+                raw_generated = await generate_replicate_faceswap(video=None, character=character, job_id=job_id, output_dir=output_dir)
             shutil.copy2(raw_generated, final)
             update_job(job_id, stage="Completed", progress=100, complete=True, final=str(final))
             return
@@ -1170,10 +1255,14 @@ async def process(
             # Dynamic character reference: start from base character image.
             # If we successfully extracted a last-frame anchor from the previous chunk, use it.
             # (Populated at the end of each loop iteration via anchor_char logic below)
+            # Dynamic character reference:
+            # For generative models (Fal/Wan2.2), we MUST use the anchor frame to preserve clothing across cuts.
+            # For FaceSwap models (MagicAPI/Replicate), we MUST use the original static character image to prevent facial degradation (photocopy effect).
             current_character = character
-            anchor_frame = output_dir / f"anchor_char_{idx-1:03d}.jpg"
-            if idx > 1 and anchor_frame.exists() and anchor_frame.stat().st_size > 1000:
-                current_character = anchor_frame
+            if engine not in ["magicapi", "replicate"]:
+                anchor_frame = output_dir / f"anchor_char_{idx-1:03d}.jpg"
+                if idx > 1 and anchor_frame.exists() and anchor_frame.stat().st_size > 1000:
+                    current_character = anchor_frame
 
             if settings.mode == "mock":
                 await asyncio.sleep(0.4)
@@ -1189,79 +1278,37 @@ async def process(
                     str(out_chunk_path)
                 )
             elif settings.mode == "hf_space":
-                if engine == "roop":
-                    gen_file = await generate_hf_roop(
-                        video=chunk_path,
-                        character=current_character,
-                        job_id=job_id,
-                        output_dir=output_dir
-                    )
+                if engine == "magicapi":
+                    gen_file = await generate_magicapi_faceswap(video=chunk_path, character=current_character, job_id=job_id, output_dir=output_dir)
+                elif engine == "fal":
+                    gen_file = await generate_fal_faceswap(video=chunk_path, character=current_character, job_id=job_id, output_dir=output_dir)
+                elif engine == "replicate":
+                    gen_file = await generate_replicate_faceswap(video=chunk_path, character=current_character, job_id=job_id, output_dir=output_dir)
                 elif engine == "sadtalker":
-                    # Always slice audio for the chunk from the original source to ensure sync
-                    # (chunk_path has no audio because it was stripped with -an)
                     chunk_audio = output_dir / f"extracted_audio_{idx:03d}.mp3"
                     start_t = chunk_info.get("start", (idx - 1) * 10.0)
                     audio_source = audio if (audio and audio.exists()) else video
-                    
                     try:
                         run("ffmpeg", "-y", "-ss", f"{start_t:.6f}", "-i", str(audio_source), "-t", f"{chunk_dur:.6f}", "-q:a", "0", "-map", "a", str(chunk_audio))
                     except Exception:
                         pass
-                        
-                    if not chunk_audio.exists() or chunk_audio.stat().st_size == 0:
-                        raise RuntimeError("This video has no audio track, but SadTalker requires audio. Please provide a video with sound or upload a separate audio file.")
-                        
-                    gen_file = await generate_hf_sadtalker(
-                        character=current_character,
-                        audio=chunk_audio,
-                        job_id=job_id,
-                        output_dir=output_dir
-                    )
+                    gen_file = await generate_hf_sadtalker(character=current_character, audio=chunk_audio, job_id=job_id, output_dir=output_dir)
                 elif engine == "echomimic":
-                    # Always slice audio for the chunk from the original source to ensure sync
                     chunk_audio = output_dir / f"extracted_audio_{idx:03d}.mp3"
                     start_t = chunk_info.get("start", (idx - 1) * 10.0)
                     audio_source = audio if (audio and audio.exists()) else video
-                    
                     try:
                         run("ffmpeg", "-y", "-ss", f"{start_t:.6f}", "-i", str(audio_source), "-t", f"{chunk_dur:.6f}", "-q:a", "0", "-map", "a", str(chunk_audio))
                     except Exception:
                         pass
-                        
-                    if not chunk_audio.exists() or chunk_audio.stat().st_size == 0:
-                        raise RuntimeError("This video has no audio track, but EchoMimic requires audio. Please provide a video with sound or upload a separate audio file.")
-                        
-                    gen_file = await generate_hf_echomimic(
-                        character=current_character,
-                        audio=chunk_audio,
-                        max_duration=chunk_target_dur,
-                        job_id=job_id,
-                        output_dir=output_dir
-                    )
+                    gen_file = await generate_hf_echomimic(character=current_character, audio=chunk_audio, max_duration=chunk_target_dur, job_id=job_id, output_dir=output_dir)
                 elif engine == "liveportrait":
-                    gen_file = await generate_hf_liveportrait(
-                        video=chunk_path,
-                        character=current_character,
-                        job_id=job_id,
-                        output_dir=output_dir
-                    )
+                    gen_file = await generate_hf_liveportrait(video=chunk_path, character=current_character, job_id=job_id, output_dir=output_dir)
                 elif engine == "replicate_animator":
-                    gen_file = await generate_replicate_animator(
-                        video=chunk_path,
-                        character=current_character,
-                        job_id=job_id,
-                        output_dir=output_dir
-                    )
+                    gen_file = await generate_replicate_animator(video=chunk_path, character=current_character, job_id=job_id, output_dir=output_dir)
                 else:
-                    # Default: Wan2.2 Animate
-                    gen_file = await generate_hf_wan_animate(
-                        video=chunk_path,
-                        character=current_character,
-                        max_duration=chunk_target_dur,
-                        resolution=resolution,
-                        job_id=job_id,
-                        output_dir=output_dir
-                    )
+                    gen_file = await generate_hf_wan_animate(video=chunk_path, character=current_character, max_duration=chunk_target_dur, resolution=resolution, job_id=job_id, output_dir=output_dir)
+                
                 shutil.copy2(gen_file, out_chunk_path)
             else:
                 # ComfyUI mode
