@@ -244,7 +244,7 @@ async function pollJobStatus() {
 
     if (job.complete) {
       clearInterval(pollInterval);
-      const downloadUrl = `/api/jobs/${jobId}/download`;
+      const downloadUrl = `${API_BASE}/api/jobs/${jobId}/download`;
       const resultVideo = $('result-video');
       const downloadBtn = $('download-btn');
 
