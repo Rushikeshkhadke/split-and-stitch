@@ -349,19 +349,9 @@ def create_watermark(path: Path):
     return path
 
 def restore_audio_and_mux(source_video: Path | None, stitched_video: Path, final_output: Path) -> Path:
-    """Muxes audio and applies the 'made with split & stitch' watermark."""
-    watermark_path = final_output.parent / "watermark.png"
-    create_watermark(watermark_path)
-    
+    """Muxes audio without watermark."""
     if not source_video or not source_video.exists():
-        run(
-            "ffmpeg", "-y",
-            "-i", str(stitched_video),
-            "-i", str(watermark_path),
-            "-filter_complex", "[0:v][1:v]overlay=W-w-20:H-h-20",
-            "-c:v", "libx264", "-crf", "22", "-preset", "fast",
-            str(final_output)
-        )
+        run("ffmpeg", "-y", "-i", str(stitched_video), "-c:v", "copy", str(final_output))
         return final_output
 
     try:
@@ -370,35 +360,19 @@ def restore_audio_and_mux(source_video: Path | None, stitched_video: Path, final
             run(
                 "ffmpeg", "-y",
                 "-i", str(stitched_video),
-                "-i", str(watermark_path),
                 "-i", str(source_video),
-                "-filter_complex", "[0:v][1:v]overlay=W-w-20:H-h-20[outv]",
-                "-map", "[outv]",
-                "-map", "2:a:0?",
-                "-c:v", "libx264", "-crf", "22", "-preset", "fast",
+                "-map", "0:v:0",
+                "-map", "1:a:0?",
+                "-c:v", "copy",
                 "-c:a", "aac", "-shortest",
                 str(final_output)
             )
             return final_output
         else:
-            run(
-                "ffmpeg", "-y",
-                "-i", str(stitched_video),
-                "-i", str(watermark_path),
-                "-filter_complex", "[0:v][1:v]overlay=W-w-20:H-h-20",
-                "-c:v", "libx264", "-crf", "22", "-preset", "fast",
-                str(final_output)
-            )
+            run("ffmpeg", "-y", "-i", str(stitched_video), "-c:v", "copy", str(final_output))
             return final_output
     except Exception:
-        run(
-            "ffmpeg", "-y",
-            "-i", str(stitched_video),
-            "-i", str(watermark_path),
-            "-filter_complex", "[0:v][1:v]overlay=W-w-20:H-h-20",
-            "-c:v", "libx264", "-crf", "22", "-preset", "fast",
-            str(final_output)
-        )
+        run("ffmpeg", "-y", "-i", str(stitched_video), "-c:v", "copy", str(final_output))
         return final_output
 
     try:
