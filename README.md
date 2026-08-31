@@ -1,4 +1,4 @@
-# Split & Stitch AI
+﻿# Split & Stitch AI
 
 A powerful, chunk-based Video Face Swapping SaaS built with FastAPI. This architecture processes long videos by chunking them to bypass serverless API limits, running GPU-accelerated Face Swaps, and seamlessly stitching the audio and video back together using FFmpeg.
 
@@ -21,9 +21,9 @@ A powerful, chunk-based Video Face Swapping SaaS built with FastAPI. This archit
 5. Deploy the backend. Render will generate a live backend URL (e.g., https://your-backend.onrender.com).
 
 ### 2. Frontend (Vercel.com)
-1. Open pp/static/app.js and change the API_BASE variable on line 1 to your new Render backend URL.
+1. Open app/static/app.js and change the API_BASE variable on line 1 to your new Render backend URL.
 2. Log into Vercel.com and create a new project.
-3. Connect the exact same GitHub repository, but set the **Root Directory** to pp/static.
+3. Connect the exact same GitHub repository, but set the **Root Directory** to app/static.
 4. Deploy the frontend!
 
 ## Features
