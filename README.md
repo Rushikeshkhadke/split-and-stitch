@@ -5,13 +5,13 @@ A powerful, chunk-based Video Face Swapping SaaS built with FastAPI. This archit
 ## Architecture
 - **Frontend:** Vanilla JS/HTML/CSS (Ready to deploy on Vercel)
 - **Backend:** Python FastAPI (Ready to deploy on Render using the provided Dockerfile)
-- **Video Engine:** FFmpeg (Chunking, watermarking, stitching, audio restoration)
+- **Video Engine:** FFmpeg (Chunking, stitching, audio restoration)
 - **AI Routing Engine:** Dynamically routes to MagicAPI, Fal.ai, or Replicate based on user UI selection.
 
 ## Deployment Instructions
 
 ### 1. Backend (Render.com)
-1. Fork or upload this repository to your GitHub account.
+1. Fork or clone this repository to your GitHub account.
 2. Log into Render.com and create a new **Web Service**.
 3. Connect your repository. Render will automatically read the Dockerfile to install FFmpeg and Python.
 4. Go to the Environment Variables section in Render and add your API keys:
@@ -27,6 +27,5 @@ A powerful, chunk-based Video Face Swapping SaaS built with FastAPI. This archit
 4. Deploy the frontend!
 
 ## Features
-- **Auto-Watermarking:** FFmpeg automatically overlays a branding watermark onto the final video.
 - **Social Sharing:** Native Web Share API integration with automatic OpenGraph SEO tags for iMessage/WhatsApp.
 - **Chunking Engine:** Safely processes long videos in 10-second chunks to avoid API timeouts and memory limits.
