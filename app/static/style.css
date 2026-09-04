@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg: #000000;
   --surface: #0a0a0a;
   --surface-light: #121212;
@@ -658,4 +658,19 @@ select:focus {
     grid-template-columns: 1fr;
     gap: 16px;
   }
+}
+
+.clear-btn {
+  margin-top: 8px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.clear-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
 }

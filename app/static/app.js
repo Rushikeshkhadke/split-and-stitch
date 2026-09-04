@@ -1,9 +1,20 @@
+
+function dataURLtoBlob(dataurl) {
+    var arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
+        bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
+    while(n--){
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], {type:mime});
+}
+
 const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://127.0.0.1:8000' : 'https://split-and-stitch-1.onrender.com';
 
 const $ = id => document.getElementById(id);
 
 let jobId = null;
 let pollInterval = null;
+let activeCharacterFile = null;
 
 // Initialize app & backend connectivity check
 async function initApp() {
@@ -95,18 +106,64 @@ function setupDropzones() {
   });
 
   // Character drop & change
+  function setCharacterPreview(fileOrBlob, dataUrl, filename) {
+    activeCharacterFile = fileOrBlob;
+    charThumb.src = dataUrl;
+    charFilename.textContent = filename || "Saved Profile Face";
+    charPlaceholder.hidden = true;
+    charPreviewWrap.hidden = false;
+    if (filename) {
+        document.getElementById('clear-character-btn').hidden = true;
+    } else {
+        document.getElementById('clear-character-btn').hidden = false;
+    }
+  }
+
   charInput.addEventListener('change', e => {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = ev => {
-        charThumb.src = ev.target.result;
-        charFilename.textContent = file.name;
-        charPlaceholder.hidden = true;
-        charPreviewWrap.hidden = false;
+        const dataUrl = ev.target.result;
+        setCharacterPreview(file, dataUrl, file.name);
+        
+        // Save to browser cache (shrink to save space)
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const max = 512;
+            let w = img.width, h = img.height;
+            if (w > h && w > max) { h *= max / w; w = max; }
+            else if (h > max) { w *= max / h; h = max; }
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            const compressedUrl = canvas.toDataURL('image/jpeg', 0.8);
+            try { localStorage.setItem('savedProfileFace', compressedUrl); } catch(e) {}
+        };
+        img.src = dataUrl;
       };
       reader.readAsDataURL(file);
     }
+  });
+
+  // Load saved face on boot
+  window.addEventListener('DOMContentLoaded', () => {
+      const saved = localStorage.getItem('savedProfileFace');
+      if (saved) {
+          try {
+              const blob = dataURLtoBlob(saved);
+              setCharacterPreview(blob, saved, null);
+          } catch(e) {}
+      }
+  });
+
+  document.getElementById('clear-character-btn').addEventListener('click', () => {
+      localStorage.removeItem('savedProfileFace');
+      activeCharacterFile = null;
+      charInput.value = '';
+      charPlaceholder.hidden = false;
+      charPreviewWrap.hidden = true;
   });
 
   // Drag over animations & drop handling
