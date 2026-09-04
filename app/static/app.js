@@ -112,11 +112,7 @@ function setupDropzones() {
     charFilename.textContent = filename || "Saved Profile Face";
     charPlaceholder.hidden = true;
     charPreviewWrap.hidden = false;
-    if (filename) {
-        document.getElementById('clear-character-btn').hidden = true;
-    } else {
-        document.getElementById('clear-character-btn').hidden = false;
-    }
+    document.getElementById('clear-character-btn').hidden = false;
   }
 
   charInput.addEventListener('change', e => {
