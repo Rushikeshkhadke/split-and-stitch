@@ -15,6 +15,10 @@ const $ = id => document.getElementById(id);
 let jobId = null;
 let pollInterval = null;
 let activeCharacterFile = null;
+let activeVideoFile = null;
+let cameraStream = null;
+let mediaRecorder = null;
+let recordedChunks = [];
 
 // Initialize app & backend connectivity check
 async function initApp() {
@@ -404,3 +408,104 @@ window.shareVideo = async function() {
     window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
   }
 };
+
+
+  // Camera Logic
+  const cameraModal = camera-modal;
+  const cameraFeed = camera-feed;
+  const btnCapture = camera-capture-btn;
+  const btnStartRec = camera-start-record-btn;
+  const btnStopRec = camera-stop-record-btn;
+  const btnCancel = camera-cancel-btn;
+  const recIndicator = recording-indicator;
+
+  function stopCamera() {
+      if (cameraStream) {
+          cameraStream.getTracks().forEach(track => track.stop());
+          cameraStream = null;
+      }
+      cameraModal.hidden = true;
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+          mediaRecorder.stop();
+      }
+  }
+
+  btnCancel.addEventListener('click', stopCamera);
+
+  // Take Photo
+  take-photo-btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      try {
+          cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          cameraFeed.srcObject = cameraStream;
+          btnCapture.hidden = false;
+          btnStartRec.hidden = true;
+          btnStopRec.hidden = true;
+          recIndicator.hidden = true;
+          cameraModal.hidden = false;
+      } catch (err) {
+          alert('Could not access camera: ' + err.message);
+      }
+  });
+
+  btnCapture.addEventListener('click', () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = cameraFeed.videoWidth;
+      canvas.height = cameraFeed.videoHeight;
+      // Mirror the context since the video is mirrored
+      const ctx = canvas.getContext('2d');
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(cameraFeed, 0, 0, canvas.width, canvas.height);
+      
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      const blob = dataURLtoBlob(dataUrl);
+      const file = new File([blob], "camera-photo.jpg", { type: "image/jpeg" });
+      
+      setCharacterPreview(file, dataUrl, "camera-photo.jpg");
+      
+      // Save to cache
+      try { localStorage.setItem('savedProfileFace', dataUrl); } catch(e) {}
+      
+      stopCamera();
+  });
+
+  // Record Video
+  record-video-btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      try {
+          cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          cameraFeed.srcObject = cameraStream;
+          btnCapture.hidden = true;
+          btnStartRec.hidden = false;
+          btnStopRec.hidden = true;
+          recIndicator.hidden = true;
+          cameraModal.hidden = false;
+      } catch (err) {
+          alert('Could not access camera/microphone: ' + err.message);
+      }
+  });
+
+  btnStartRec.addEventListener('click', () => {
+      recordedChunks = [];
+      mediaRecorder = new MediaRecorder(cameraStream);
+      mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) recordedChunks.push(e.data);
+      };
+      mediaRecorder.onstop = () => {
+          const blob = new Blob(recordedChunks, { type: 'video/webm' });
+          const file = new File([blob], "recorded-video.webm", { type: "video/webm" });
+          const dataUrl = URL.createObjectURL(blob);
+          setVideoPreview(file, dataUrl, "recorded-video.webm");
+      };
+      mediaRecorder.start();
+      btnStartRec.hidden = true;
+      btnStopRec.hidden = false;
+      recIndicator.hidden = false;
+  });
+
+  btnStopRec.addEventListener('click', () => {
+      stopCamera();
+  });

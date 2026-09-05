@@ -674,3 +674,66 @@ select:focus {
 .clear-btn:hover {
   background: rgba(239, 68, 68, 0.2);
 }
+
+.cam-btn {
+  margin-top: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  z-index: 10;
+}
+.cam-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.camera-modal {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.camera-modal[hidden] {
+  display: none !important;
+}
+.camera-modal-content {
+  background: var(--bg-card);
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  max-width: 90vw;
+}
+#camera-feed {
+  width: 100%;
+  max-width: 600px;
+  border-radius: 8px;
+  background: #000;
+  transform: scaleX(-1);
+}
+.camera-controls {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  justify-content: center;
+}
+#recording-indicator {
+  color: #ef4444;
+  font-weight: 600;
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}

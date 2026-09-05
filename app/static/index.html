@@ -96,6 +96,7 @@
                 </div>
                 <p class="drop-title">Drop your video here</p>
                 <p class="drop-sub">or <span class="browse-link">browse files</span> (MP4, MOV)</p>
+                  <button type="button" id="record-video-btn" class="cam-btn">📷 Record Video</button>
               </div>
               <div class="preview-container" id="video-preview-wrap" hidden>
                 <video id="video-thumb" playsinline loop muted></video>
@@ -122,6 +123,7 @@
                 </div>
                 <p class="drop-title">Drop character image</p>
                 <p class="drop-sub">or <span class="browse-link">browse files</span> (PNG, JPG)</p>
+                  <button type="button" id="take-photo-btn" class="cam-btn">📷 Take Photo</button>
               </div>
               <div class="preview-container" id="character-preview-wrap" hidden>
                 <img id="character-thumb" alt="Character Preview">
@@ -295,6 +297,20 @@
     </footer>
   </div>
   <script src="app.js"></script>
+
+  <div id="camera-modal" class="camera-modal" hidden>
+    <div class="camera-modal-content">
+      <video id="camera-feed" autoplay playsinline muted></video>
+      <div id="recording-indicator" hidden>🔴 Recording...</div>
+      <div class="camera-controls">
+        <button type="button" id="camera-capture-btn" class="primary-btn" hidden>Capture Photo</button>
+        <button type="button" id="camera-start-record-btn" class="primary-btn" hidden>Start Recording</button>
+        <button type="button" id="camera-stop-record-btn" class="primary-btn" style="background:#ef4444;" hidden>Stop Recording</button>
+        <button type="button" id="camera-cancel-btn" class="clear-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
 </body>
+
 </html>
 
