@@ -433,7 +433,7 @@ window.shareVideo = async function() {
   btnCancel.addEventListener('click', stopCamera);
 
   // Take Photo
-  take-photo-btn.addEventListener('click', async (e) => {
+$('take-photo-btn').addEventListener('click', async (e) => {
       e.stopPropagation();
       e.preventDefault();
       try {
@@ -472,7 +472,7 @@ window.shareVideo = async function() {
   });
 
   // Record Video
-  record-video-btn.addEventListener('click', async (e) => {
+$('record-video-btn').addEventListener('click', async (e) => {
       e.stopPropagation();
       e.preventDefault();
       try {
@@ -509,4 +509,5 @@ window.shareVideo = async function() {
   btnStopRec.addEventListener('click', () => {
       stopCamera();
   });
+
 
