@@ -1,25 +1,29 @@
-﻿<!DOCTYPE html>
+﻿<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Split & Stitch â€” AI Video Face Swapping</title>
-  
-  <!-- OpenGraph SEO Tags for Social Previews (WhatsApp, iMessage, Twitter) -->
-  <meta property="og:title" content="Split & Stitch â€” AI Video Face Swapping">
-  <meta property="og:description" content="Seamlessly swap faces in long videos using chunked AI processing. Powered by Fal.ai Serverless.">
-  <meta property="og:image" content="https://upload.wikimedia.org/wikipedia/commons/d/d3/Albert_Einstein_Head.jpg">
-  <meta property="og:url" content="https://split-and-stitch.vercel.app">
-  <meta name="twitter:card" content="summary_large_image">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 
+  <!-- Open Graph / Social Preview Meta Tags -->
+  <meta property="og:title" content="Split & Stitch AI - Intelligent Video Splicing">
+  <meta property="og:description" content="Seamlessly face-swap full-length videos. Our intelligent engine splits, processes, and stitches videos with perfect audio sync.">
+  <meta property="og:image" content="https://res.cloudinary.com/tuatm043/image/upload/v1788117637/einstien.jpg">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#0f172a">
+
+  <title>Split & Stitch â€” AI Video Face Swap Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
   <div class="app-container">
+    <!-- Header -->
     <header class="app-header">
-      <div class="header-left">
-        <div class="logo-box">
+      <div class="brand">
+        <div class="brand-icon">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
@@ -28,215 +32,277 @@
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
         </div>
-        <div class="title-wrap">
+        <div>
           <h1>Split & Stitch</h1>
-          <p>Intelligent Video Chunking & Splicing â€” powered by Fal.ai Serverless</p>
+          <p class="subtitle">Intelligent Video Chunking & Splicing â€” powered by Fal.ai Serverless</p>
         </div>
       </div>
-      <div class="header-right">
-        <div class="status-pill" id="status-pill">
-          <span class="status-dot"></span>
-          <span class="status-text" id="status-text">Backend Offline</span>
-        </div>
+      <div id="status-pill" class="status-pill checking">
+        <span class="status-dot"></span>
+        <span id="status-text">Checking backend...</span>
       </div>
     </header>
 
-    <main class="app-main">
+    <!-- Notice Box -->
+    <div id="preflight-banner" class="preflight-banner" hidden></div>
+
+    <!-- Main Creation Studio -->
+        <!-- Expert Tips Section -->
+    <div style="max-width: 950px; margin: 0 auto 30px auto; width: 100%; box-sizing: border-box; padding: 24px; background: rgba(255, 255, 255, 0.02); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05);">
+      <h4 style="margin-top: 0; margin-bottom: 16px; color: #f8fafc; display: flex; align-items: center; gap: 8px; font-size: 1.1rem;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+        Expert Tips for Best Results
+      </h4>
+      <div class="expert-tips-grid">
+        <div>
+          <strong style="color: #4ade80;">✅ DO'S</strong>
+          <ul style="margin-top: 10px; padding-left: 20px; line-height: 1.6; display: flex; flex-direction: column; gap: 6px;">
+            <li><strong>Match Facial Hair:</strong> Put bearded faces on bearded videos, and clean-shaven on clean-shaven.</li>
+            <li><strong>Match Skin Tone:</strong> Try to use images with similar lighting and skin tones to the video.</li>
+            <li><strong>Clear Images:</strong> Use high-quality, brightly lit, front-facing character images.</li>
+          </ul>
+        </div>
+        <div>
+          <strong style="color: #f87171;">❌ DON'TS</strong>
+          <ul style="margin-top: 10px; padding-left: 20px; line-height: 1.6; display: flex; flex-direction: column; gap: 6px;">
+            <li><strong>Extreme Angles:</strong> Avoid videos with extreme side-profiles or people looking down.</li>
+            <li><strong>Obstructions:</strong> Avoid videos where hands, glasses, or objects cross in front of the face.</li>
+            <li><strong>Harsh Shadows:</strong> Don't use character images that have dark, dramatic shadows over half the face.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    
+    <main class="studio-card">
       <form id="swap-form">
-        <div id="preflight-banner" class="preflight-banner" hidden></div>
-        <div class="upload-section">
-          
-          <!-- EXPERT TIPS SECTION -->
-          <div class="expert-tips-container">
-            <div class="tips-header">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="16" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12.01" y2="8"></line>
-              </svg>
-              <h3>Expert Tips for Best Results</h3>
+        <!-- Dual Upload Section -->
+        <div class="upload-grid">
+          <!-- Source Video Upload -->
+          <div class="upload-card" id="video-card">
+            <div class="card-header">
+              <span class="step-num">1</span>
+              <h3>Source Motion Video</h3>
             </div>
-            
-            <div class="expert-tips-grid">
-              <div class="tips-column tips-dos">
-                <h4 class="tips-title dos-title">✅ DO'S</h4>
-                <ul class="tips-list">
-                  <li><strong>Match Facial Hair:</strong> Put bearded faces on bearded videos, and clean-shaven on clean-shaven.</li>
-                  <li><strong>Match Skin Tone:</strong> Try to use images with similar lighting and skin tones to the video.</li>
-                  <li><strong>Clear Images:</strong> Use high-quality, brightly lit, front-facing character images.</li>
-                </ul>
-              </div>
-              
-              <div class="tips-column tips-donts">
-                <h4 class="tips-title donts-title">âŒ DON'TS</h4>
-                <ul class="tips-list">
-                  <li><strong>Extreme Angles:</strong> Avoid videos with extreme side-profiles or people looking down.</li>
-                  <li><strong>Obstructions:</strong> Avoid videos where hands, glasses, or objects cross in front of the face.</li>
-                  <li><strong>Harsh Shadows:</strong> Don't use character images that have dark, dramatic shadows over half the face.</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-
-          <!-- UPLOAD BOXES -->
-          <div class="upload-grid">
-            
-            <!-- Video Box -->
-            <div class="step-card">
-              <div class="step-header">
-                <span class="step-num">1</span>
-                <h3>Source Motion Video</h3>
-              </div>
-              <div class="dropzone" id="video-dropzone">
-                <input id="video-input" type="file" accept="video/mp4,video/quicktime,video/webm" required>
-                <div class="dropzone-content" id="video-placeholder">
-                  <div class="upload-icon">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                      <polyline points="17 8 12 3 7 8"></polyline>
-                      <line x1="12" y1="3" x2="12" y2="15"></line>
-                    </svg>
-                  </div>
-                  <p class="drop-title">Drop your video here</p>
-                  <p class="drop-sub">or <span class="browse-link">browse files</span> (MP4, MOV)</p>
+            <div class="dropzone" id="video-dropzone">
+              <input id="video-input" type="file" accept="video/mp4,video/quicktime,video/webm" required>
+              <div class="dropzone-content" id="video-placeholder">
+                <div class="upload-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                  </svg>
                 </div>
-                <div class="preview-container" id="video-preview-wrap" hidden>
-                  <video id="video-thumb" autoplay loop muted playsinline></video>
-                  <div class="file-tag" id="video-filename"></div>
-                </div>
+                <p class="drop-title">Drop your video here</p>
+                <p class="drop-sub">or <span class="browse-link">browse files</span> (MP4, MOV)</p>
+                  
               </div>
-              <button type="button" id="record-video-btn" class="cam-btn" style="width: 100%; margin-top: 10px;">📷 Or Record Video From Camera</button>
-            </div>
-
-            <!-- Character Box -->
-            <div class="step-card">
-              <div class="step-header">
-                <span class="step-num">2</span>
-                <h3>Character Reference Image</h3>
-              </div>
-              <div class="dropzone" id="character-dropzone">
-                <input id="character-input" type="file" accept="image/png,image/jpeg,image/webp" required>
-                <div class="dropzone-content" id="character-placeholder">
-                  <div class="upload-icon">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
-                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                      <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                      <polyline points="21 15 16 10 5 21"></polyline>
-                    </svg>
-                  </div>
-                  <p class="drop-title">Drop character image</p>
-                  <p class="drop-sub">or <span class="browse-link">browse files</span> (PNG, JPG)</p>
-                </div>
-                <div class="preview-container" id="character-preview-wrap" hidden>
-                  <img id="character-thumb" alt="Character Preview">
-                  <div class="file-tag" id="character-filename"></div>
-                  <button type="button" id="clear-character-btn" class="clear-btn" hidden>Remove Saved Face</button>
-                </div>
+              <div class="preview-container" id="video-preview-wrap" hidden>
+                <video id="video-thumb" playsinline loop muted></video>
+                <div class="file-tag" id="video-filename"></div>
               </div>
               <button type="button" id="take-photo-btn" class="cam-btn" style="width: 100%; margin-top: 10px;">📷 Or Take Photo From Camera</button>
             </div>
           </div>
+
+          <!-- Character Image Upload -->
+          <div class="upload-card" id="character-card">
+            <div class="card-header">
+              <span class="step-num">2</span>
+              <h3>Character Reference Image</h3>
+            </div>
+            <div class="dropzone" id="character-dropzone">
+              <input id="character-input" type="file" accept="image/png,image/jpeg,image/webp" required>
+              <div class="dropzone-content" id="character-placeholder">
+                <div class="upload-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                </div>
+                <p class="drop-title">Drop character image</p>
+                <p class="drop-sub">or <span class="browse-link">browse files</span> (PNG, JPG)</p>
+                  
+              </div>
+              <div class="preview-container" id="character-preview-wrap" hidden>
+                <img id="character-thumb" alt="Character Preview">
+                <div class="file-tag" id="character-filename"></div><button type="button" id="clear-character-btn" class="clear-btn" hidden>Remove Saved Face</button>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <!-- SETTINGS BAR -->
+        <!-- Generation Settings Controls -->
         <div class="settings-bar">
-          <div class="setting-group engine-group">
-            <label>AI ENGINE</label>
-            <select id="engine-select">
-              <option value="magicapi">Face Swap Mode (MagicAPI FaceFusion - Best Quality)</option>
-              <option value="fal">Face Swap Mode (Fal.ai FaceSwap - Fast)</option>
-              <option value="replicate">Face Swap Mode (Replicate FaceSwap)</option>
-            </select>
+          <div class="setting-item">
+            <label for="engine-select">AI Engine</label>
+            <div class="select-wrapper">
+              <select id="engine-select">
+                <option value="magicapi" selected>Face Swap Mode (MagicAPI FaceFusion - Best Quality & Lipsync)</option>
+                <option value="fal">Face Swap Mode (Fal.ai PixVerse - Generative Re-draw)</option>
+                <option value="replicate">Face Swap Mode (Replicate A100 - Raw Engine)</option>
+              </select>
+            </div>
           </div>
-          <div class="setting-group duration-group">
-            <label>DURATION</label>
-            <select id="duration-select">
-              <option value="0">Auto (Full Video)</option>
-              <option value="5">First 5 Seconds (Test)</option>
-              <option value="10">First 10 Seconds</option>
-              <option value="30">First 30 Seconds</option>
-            </select>
+          <div class="setting-item">
+            <label for="duration-select">Duration</label>
+            <div class="select-wrapper">
+              <select id="duration-select">
+                <option value="auto" selected>Auto (Full Video)</option>
+                <option value="10">10 Seconds (Quick Test)</option>
+                <option value="20">20 Seconds</option>
+                <option value="30">30 Seconds</option>
+                <option value="60">60 Seconds</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        <button type="submit" class="primary-btn submit-btn" id="start-btn">
-          <span>Swap Face Now</span>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <!-- Submit Button -->
+        <button id="start-btn" class="primary-btn" type="submit">
+          <span class="btn-text">Swap Face Now</span>
+          <svg class="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polygon points="5 3 19 12 5 21 5 3"></polygon>
           </svg>
         </button>
       </form>
 
-      <!-- PROGRESS OVERLAY -->
-      <div class="progress-overlay" id="progress-overlay" hidden>
-        <div class="progress-card">
-          <h2 id="progress-status">Initializing...</h2>
-          <p id="progress-detail" class="progress-detail">Connecting to processing engine</p>
-          <div class="progress-bar-container">
-            <div class="progress-bar-fill" id="progress-fill"></div>
+      <!-- Processing Progress Section -->
+      <section id="progress-section" class="progress-section" hidden>
+        <div class="progress-header">
+          <div class="spinner" id="progress-spinner"></div>
+          <div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <h4 id="stage-label">Preparing Generation...</h4>
+              <span id="chunk-badge" class="chunk-badge" hidden>Chunk 1/1</span>
+            </div>
+            <p id="stage-detail" class="stage-detail">Connecting to AI generation pipeline...</p>
           </div>
-          <p class="progress-percent" id="progress-percent">0%</p>
+          <span id="progress-percent" class="progress-percent">0%</span>
         </div>
-      </div>
-
-      <!-- SUCCESS OVERLAY -->
-      <div class="success-overlay" id="success-overlay" hidden>
-        <div class="success-card">
-          <div class="success-icon">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2">
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-              <polyline points="22 4 12 14.01 9 11.01"></polyline>
+        <div class="progress-track">
+          <div id="progress-bar" class="progress-fill" style="width: 0%"></div>
+        </div>
+        <div id="retry-wrap" style="margin-top: 14px; display: flex; justify-content: flex-end;" hidden>
+          <button id="retry-btn" class="secondary-btn" type="button" style="padding: 8px 16px; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6"></path>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
             </svg>
-          </div>
-          <h2>Swap Complete!</h2>
-          <div class="video-result-container">
-            <video id="result-video" controls playsinline></video>
-          </div>
-          <div class="action-buttons">
-            <a id="download-btn" class="primary-btn download-btn">Download Video</a>
-            
-            <button id="share-btn" class="secondary-btn share-btn" onclick="shareVideo()">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="18" cy="5" r="3"></circle>
-                <circle cx="6" cy="12" r="3"></circle>
-                <circle cx="18" cy="19" r="3"></circle>
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
-                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-              </svg>
-              Share
-            </button>
-            
-            <button type="button" class="secondary-btn" id="reset-btn">Create Another</button>
-          </div>
+            <span>Retry Failed Chunk</span>
+          </button>
         </div>
-      </div>
+      </section>
 
-      <!-- ERROR OVERLAY -->
-      <div class="error-overlay" id="error-overlay" hidden>
-        <div class="error-card">
-          <div class="error-icon">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="15" y1="9" x2="9" y2="15"></line>
-              <line x1="9" y1="9" x2="15" y2="15"></line>
+      <!-- Generation Result Section -->
+      <section id="result-section" class="result-section" hidden>
+        <div class="result-header">
+          <div class="success-badge">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
+            <span>Character Swap Ready</span>
           </div>
-          <h2>Task Failed</h2>
-          <p id="error-detail">An unexpected error occurred.</p>
-          <button type="button" class="primary-btn" id="retry-btn">Try Again</button>
         </div>
-      </div>
+        <div class="result-player-wrap">
+          <video id="result-video" controls autoplay playsinline loop></video>
+        </div>
+        <div class="result-actions">
+          <a id="download-btn" class="download-btn" download="final_character_swap.mp4">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Download Video</span>
+          </a>
+          
+          <button id="share-btn" class="secondary-btn" type="button" onclick="shareVideo()" style="background: #1DA1F2; border: none; color: white; display: flex; align-items: center; gap: 8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+              <polyline points="16 6 12 2 8 6"></polyline>
+              <line x1="12" y1="2" x2="12" y2="15"></line>
+            </svg>
+            <span>Share</span>
+          </button>
+          <button id="reset-btn" class="secondary-btn" type="button">New Swap</button>
+        </div>
+      </section>
     </main>
 
+    
+
+<!-- Examples Gallery -->
+
+    <section class="examples-gallery">
+      <div class="gallery-header">
+        <h2>Inspiration & Examples</h2>
+        <p>See what's possible with Split & Stitch AI.</p>
+      </div>
+      <div class="gallery-grid" id="gallery-grid">
+        <!-- Row 1 -->
+        <div class="gallery-row">
+          <div class="gallery-item">
+            <span class="gallery-label">Character Reference</span>
+            <img src="https://res.cloudinary.com/tuatm043/image/upload/v1788117637/einstien.jpg" alt="Einstein">
+          </div>
+          <div class="gallery-item">
+            <span class="gallery-label">Source Video</span>
+            <video src="https://res.cloudinary.com/tuatm043/video/upload/v1788117642/4761763-uhd_4096_2160_25fps.mp4" controls playsinline></video>
+          </div>
+          <div class="gallery-item">
+            <span class="gallery-label">AI Result</span>
+            <video src="https://res.cloudinary.com/tuatm043/video/upload/v1788117653/20250420_212044_0594448c-1.mp4" controls playsinline></video>
+          </div>
+        </div>
+        
+        <!-- Row 2 -->
+        <div class="gallery-row">
+          <div class="gallery-item">
+            <span class="gallery-label">Character Reference</span>
+            <img src="https://res.cloudinary.com/tuatm043/image/upload/v1788117981/salman_khan.jpg" alt="Salman Khan">
+          </div>
+          <div class="gallery-item">
+            <span class="gallery-label">Source Video</span>
+            <video src="https://res.cloudinary.com/tuatm043/video/upload/v1788117903/5182923-uhd_1440_2560_25fps.mp4" controls playsinline></video>
+          </div>
+          <div class="gallery-item">
+            <span class="gallery-label">AI Result</span>
+            <video src="https://res.cloudinary.com/tuatm043/video/upload/v1788117844/20250420_224334_cc63a1cb.mp4" controls playsinline></video>
+          </div>
+        </div>
+        <!-- Row 3 -->
+        <div class="gallery-row">
+          <div class="gallery-item">
+            <span class="gallery-label">Character Reference</span>
+            <img src="https://res.cloudinary.com/tuatm043/image/upload/v1788118460/katrina.jpg" alt="Katrina">
+          </div>
+          <div class="gallery-item">
+            <span class="gallery-label">Source Video</span>
+            <video src="https://res.cloudinary.com/tuatm043/video/upload/v1788118457/7299606-uhd_1440_2732_25fps.mp4" controls playsinline></video>
+          </div>
+          <div class="gallery-item">
+            <span class="gallery-label">AI Result</span>
+            <video src="https://res.cloudinary.com/tuatm043/video/upload/v1788118429/20250421_053245_dbcc049c.mp4" controls playsinline></video>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+
     <footer class="app-footer">
-      <p id="footer-engine-text">Powered by AI Video Chunking Architecture</p>
+      <p>Split & Stitch â€¢ Powered by Fal.ai Serverless Engine</p>
     </footer>
   </div>
+  <script src="app.js"></script>
 
   <div id="camera-modal" class="camera-modal" hidden>
     <div class="camera-modal-content">
       <video id="camera-feed" autoplay playsinline muted></video>
-      <div id="recording-indicator" hidden>ðŸ”´ Recording...</div>
+      <div id="recording-indicator" hidden>🔴 Recording...</div>
       <div class="camera-controls">
         <button type="button" id="camera-capture-btn" class="primary-btn" hidden>Capture Photo</button>
         <button type="button" id="camera-start-record-btn" class="primary-btn" hidden>Start Recording</button>
@@ -245,8 +311,7 @@
       </div>
     </div>
   </div>
-<script src="app.js"></script>
 </body>
-</html>
 
+</html>
 
