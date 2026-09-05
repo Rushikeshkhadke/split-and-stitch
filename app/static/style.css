@@ -676,6 +676,7 @@ select:focus {
 }
 
 .cam-btn {
+  position: relative;
   margin-top: 12px;
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-primary);
@@ -737,3 +738,4 @@ select:focus {
   50% { opacity: 0.5; }
   100% { opacity: 1; }
 }
+
