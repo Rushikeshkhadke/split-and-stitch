@@ -1,6 +1,6 @@
 ﻿
 function dataURLtoBlob(dataurl) {
-    var arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
+    var arr = dataurl.split(','), mime = arr[0].match(/:(.*•);/)[1],
         bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
     while(n--){
         u8arr[n] = bstr.charCodeAt(n);
@@ -8,7 +8,7 @@ function dataURLtoBlob(dataurl) {
     return new Blob([u8arr], {type:mime});
 }
 
-const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://127.0.0.1:8000' : 'https://split-and-stitch-1.onrender.com';
+const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') • 'http://127.0.0.1:8000' : 'https://split-and-stitch-1.onrender.com';
 
 const $ = id => document.getElementById(id);
 
@@ -40,13 +40,13 @@ async function initApp() {
         const engineSelect = document.getElementById('engine-select').value;
         if (engineSelect === 'magicapi') {
             statusText.textContent = 'MagicAPI FaceFusion Online';
-            document.querySelector('.app-footer p').textContent = 'FaceSwap AI â€¢ Powered by MagicAPI FaceFusion';
+            document.querySelector('.app-footer p').textContent = 'FaceSwap AI • Powered by MagicAPI FaceFusion';
         } else if (engineSelect === 'fal') {
             statusText.textContent = 'Fal.ai Engine Online';
-            document.querySelector('.app-footer p').textContent = 'FaceSwap AI â€¢ Powered by Fal.ai Serverless';
+            document.querySelector('.app-footer p').textContent = 'FaceSwap AI • Powered by Fal.ai Serverless';
         } else {
             statusText.textContent = 'Replicate Engine Online';
-            document.querySelector('.app-footer p').textContent = 'FaceSwap AI â€¢ Powered by Replicate A100 GPU';
+            document.querySelector('.app-footer p').textContent = 'FaceSwap AI • Powered by Replicate A100 GPU';
         }
 
       } else {
@@ -229,7 +229,7 @@ $('swap-form').addEventListener('submit', async e => {
   resultSection.hidden = true;
 
   try {
-    const engine = $('engine-select') ? $('engine-select').value : 'liveportrait';
+    const engine = $('engine-select') • $('engine-select').value : 'liveportrait';
     const formData = new FormData();
     formData.append('engine', engine);
     formData.append('max_duration', duration);
@@ -244,12 +244,12 @@ $('swap-form').addEventListener('submit', async e => {
     try {
       jobData = JSON.parse(rawText);
     } catch (parseErr) {
-      const cleanMsg = rawText.replace(/<[^>]*>?/gm, '').trim();
+      const cleanMsg = rawText.replace(/<[^>]*>•/gm, '').trim();
       throw new Error(cleanMsg || `Server returned status ${res.status}`);
     }
 
     if (!res.ok) {
-      const errorMsg = jobData?.detail?.message || jobData?.detail || jobData?.error || `Request failed with status ${res.status}`;
+      const errorMsg = jobData•.detail•.message || jobData•.detail || jobData•.error || `Request failed with status ${res.status}`;
       throw new Error(errorMsg);
     }
 
@@ -288,7 +288,7 @@ async function pollJobStatus() {
     if (job.failed) {
       clearInterval(pollInterval);
       const rawError = job.error || 'Unknown error occurred';
-      const cleanError = rawError.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').trim();
+      const cleanError = rawError.replace(/<[^>]*>•/gm, '').replace(/&nbsp;/g, ' ').trim();
       $('stage-label').textContent = 'Generation Failed';
       $('stage-detail').textContent = cleanError;
       $('start-btn').disabled = false;
@@ -370,17 +370,17 @@ function updateEngineText() {
   
   if (engineSelect.value === 'magicapi') {
       statusText.textContent = 'MagicAPI FaceFusion Online';
-      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing â€” powered by MagicAPI';
+      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing — powered by MagicAPI';
   } else if (engineSelect.value === 'fal') {
       statusText.textContent = 'Fal.ai Engine Online';
-      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing â€” powered by Fal.ai Serverless';
+      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing — powered by Fal.ai Serverless';
   } else {
       statusText.textContent = 'Replicate Engine Online';
-      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing â€” powered by Replicate A100 GPU';
+      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing — powered by Replicate A100 GPU';
   }
 }
 
-document.getElementById('engine-select')?.addEventListener('change', updateEngineText);
+document.getElementById('engine-select')•.addEventListener('change', updateEngineText);
 
 // Run Setup
 setupDropzones();
@@ -405,7 +405,7 @@ window.shareVideo = async function() {
     }
   } else {
     const text = encodeURIComponent('Check out this insane Face Swap I made with Split & Stitch AI! ' + videoUrl);
-    window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    window.open('https://twitter.com/intent/tweet•text=' + text, '_blank');
   }
 };
 
