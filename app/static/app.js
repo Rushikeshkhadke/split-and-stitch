@@ -411,13 +411,13 @@ window.shareVideo = async function() {
 
 
   // Camera Logic
-  const cameraModal = camera-modal;
-  const cameraFeed = camera-feed;
-  const btnCapture = camera-capture-btn;
-  const btnStartRec = camera-start-record-btn;
-  const btnStopRec = camera-stop-record-btn;
-  const btnCancel = camera-cancel-btn;
-  const recIndicator = recording-indicator;
+  const cameraModal = $('camera-modal');
+  const cameraFeed = $('camera-feed');
+  const btnCapture = $('camera-capture-btn');
+  const btnStartRec = $('camera-start-record-btn');
+  const btnStopRec = $('camera-stop-record-btn');
+  const btnCancel = $('camera-cancel-btn');
+  const recIndicator = $('recording-indicator');
 
   function stopCamera() {
       if (cameraStream) {
