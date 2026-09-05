@@ -540,3 +540,4 @@ document.getElementById('remove-char-btn').addEventListener('click', (e) => {
     document.getElementById('character-placeholder').hidden = false;
     document.getElementById('character-preview-wrap').hidden = true;
 });
+
