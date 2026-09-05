@@ -511,3 +511,17 @@ $('record-video-btn').addEventListener('click', async (e) => {
   });
 
 
+
+function setVideoPreview(file, dataUrl, filename) {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    $('video-input').files = dt.files;
+    $('video-input').dispatchEvent(new Event('change'));
+}
+
+function setCharacterPreview(file, dataUrl, filename) {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    $('character-input').files = dt.files;
+    $('character-input').dispatchEvent(new Event('change'));
+}
