@@ -40,13 +40,13 @@ async function initApp() {
         const engineSelect = document.getElementById('engine-select').value;
         if (engineSelect === 'magicapi') {
             statusText.textContent = 'MagicAPI FaceFusion Online';
-            document.querySelector('.app-footer p').textContent = 'FaceSwap AI â€¢ Powered by MagicAPI FaceFusion';
+            document.querySelector('.app-footer p').textContent = 'FaceSwap AI • Powered by MagicAPI FaceFusion';
         } else if (engineSelect === 'fal') {
             statusText.textContent = 'Fal.ai Engine Online';
-            document.querySelector('.app-footer p').textContent = 'FaceSwap AI â€¢ Powered by Fal.ai Serverless';
+            document.querySelector('.app-footer p').textContent = 'FaceSwap AI • Powered by Fal.ai Serverless';
         } else {
             statusText.textContent = 'Replicate Engine Online';
-            document.querySelector('.app-footer p').textContent = 'FaceSwap AI â€¢ Powered by Replicate A100 GPU';
+            document.querySelector('.app-footer p').textContent = 'FaceSwap AI • Powered by Replicate A100 GPU';
         }
 
       } else {
@@ -370,13 +370,13 @@ function updateEngineText() {
   
   if (engineSelect.value === 'magicapi') {
       statusText.textContent = 'MagicAPI FaceFusion Online';
-      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing â€” powered by MagicAPI';
+      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing — powered by MagicAPI';
   } else if (engineSelect.value === 'fal') {
       statusText.textContent = 'Fal.ai Engine Online';
-      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing â€” powered by Fal.ai Serverless';
+      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing — powered by Fal.ai Serverless';
   } else {
       statusText.textContent = 'Replicate Engine Online';
-      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing â€” powered by Replicate A100 GPU';
+      if(footerText) footerText.textContent = 'Intelligent Video Chunking & Splicing — powered by Replicate A100 GPU';
   }
 }
 
