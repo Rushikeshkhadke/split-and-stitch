@@ -525,3 +525,18 @@ function setCharacterPreview(file, dataUrl, filename) {
     $('character-input').files = dt.files;
     $('character-input').dispatchEvent(new Event('change'));
 }
+document.getElementById('remove-video-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    document.getElementById('video-input').value = '';
+    document.getElementById('video-placeholder').hidden = false;
+    document.getElementById('video-preview-wrap').hidden = true;
+});
+
+document.getElementById('remove-char-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    document.getElementById('character-input').value = '';
+    document.getElementById('character-placeholder').hidden = false;
+    document.getElementById('character-preview-wrap').hidden = true;
+});
