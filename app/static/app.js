@@ -116,8 +116,7 @@ function setupDropzones() {
     charFilename.textContent = filename || "Saved Profile Face";
     charPlaceholder.hidden = true;
     charPreviewWrap.hidden = false;
-    document.getElementById('clear-character-btn').hidden = false;
-  }
+    }
 
   charInput.addEventListener('change', e => {
     const file = e.target.files[0];
@@ -156,14 +155,6 @@ function setupDropzones() {
               setCharacterPreview(blob, saved, null);
           } catch(e) {}
       }
-  });
-
-  document.getElementById('clear-character-btn').addEventListener('click', () => {
-      localStorage.removeItem('savedProfileFace');
-      activeCharacterFile = null;
-      charInput.value = '';
-      charPlaceholder.hidden = false;
-      charPreviewWrap.hidden = true;
   });
 
   // Drag over animations & drop handling
@@ -537,6 +528,7 @@ document.getElementById('remove-char-btn').addEventListener('click', (e) => {
     e.stopPropagation();
     e.preventDefault();
     document.getElementById('character-input').value = '';
+    try { localStorage.removeItem('savedProfileFace'); } catch(err) {}
     document.getElementById('character-placeholder').hidden = false;
     document.getElementById('character-preview-wrap').hidden = true;
 });
